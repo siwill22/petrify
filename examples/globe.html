@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deep-time-map — standalone example</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden;
+    background: #070c16; color: #e8f0f8;
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+  .panel {
+    position: absolute; left: 1rem; top: 1rem; z-index: 2;
+    padding: 0.9rem 1.1rem; border-radius: 10px;
+    background: rgba(9,16,28,0.82); border: 1px solid rgba(143,212,240,0.22);
+    backdrop-filter: blur(8px);
+  }
+  h1 { margin: 0 0 0.2rem; font-size: 1rem; font-weight: 600; }
+  p { margin: 0 0 0.7rem; font-size: 0.8rem; color: rgba(232,240,248,0.62); }
+  label { display: flex; align-items: center; gap: 0.6rem; font-size: 0.82rem; }
+  input[type=range] { width: 13rem; accent-color: #8fd4f0; }
+  .err { color: #ff9d9d; max-width: 26rem; }
+  code { background: rgba(255,255,255,0.08); padding: 0 0.25rem; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="panel">
+  <h1>deep-time-map</h1>
+  <p>Standalone — no host renderer, just <code>Orthographic</code>.<br>Drag to rotate.</p>
+  <label><span id="t">100</span> Ma <input id="time" type="range" min="0" max="250" value="100"></label>
+  <p class="err" id="err"></p>
+</div>
+
+<script type="module">
+/*
+ * The point of this example is that it imports nothing but the library itself. If it
+ * renders, the library has no hidden dependency on any particular host.
+ */
+import { BoundarySeries, VelocityField, Orthographic } from '../js/index.js';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const errEl = document.getElementById('err');
+
+const view = { lon: -60, lat: 10 };
+const projector = new Orthographic();
+
+let boundaries, velocities;
+let time = 100;
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  projector.cx = innerWidth / 2;
+  projector.cy = innerHeight / 2;
+  projector.radius = Math.min(innerWidth, innerHeight) * 0.42;
+}
+
+function draw() {
+  ctx.clearRect(0, 0, innerWidth, innerHeight);
+  projector.lookAt(view.lon, view.lat);
+
+  // A plain disc, so the globe reads as a sphere without needing a raster layer.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(projector.cx, projector.cy, projector.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#0d1b2e';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(143,212,240,0.25)';
+  ctx.stroke();
+  ctx.restore();
+
+  boundaries?.draw(ctx, projector);
+  velocities?.draw(ctx, projector);
+}
+
+async function setTime(t) {
+  time = t;
+  document.getElementById('t').textContent = Math.round(t);
+  velocities?.setTime(t);
+  draw();
+  await boundaries?.setTime(t, draw);
+}
+
+async function main() {
+  resize();
+  addEventListener('resize', () => { resize(); draw(); });
+
+  [boundaries, velocities] = await Promise.all([
+    BoundarySeries.load('data/boundaries.json'),
+    VelocityField.load('data/velocities.json'),
+  ]);
+
+  const [lo, hi] = boundaries.timeRange;
+  const slider = document.getElementById('time');
+  slider.min = lo; slider.max = hi;
+  slider.addEventListener('input', () => setTime(Number(slider.value)));
+
+  let dragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    canvas.classList.add('dragging'); canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const scale = 90 / projector.radius;
+    view.lon -= (e.clientX - lastX) * scale;
+    view.lat = Math.max(-89.9, Math.min(89.9, view.lat + (e.clientY - lastY) * scale));
+    lastX = e.clientX; lastY = e.clientY;
+    draw();
+  });
+  const end = (e) => {
+    dragging = false; canvas.classList.remove('dragging');
+    canvas.releasePointerCapture?.(e.pointerId);
+  };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+
+  await setTime(time);
+}
+
+main().catch((e) => {
+  errEl.innerHTML = 'Could not load: ' + e.message +
+    '<br><br>Export some data first:<br>' +
+    '<code>python -m deep_time_map.export --out examples/data</code>';
+  console.error(e);
+});
+</script>
+
+</body>
+</html>
