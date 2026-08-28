@@ -16,6 +16,7 @@ import pygplates
 from gprm.datasets import Reconstructions
 
 from .boundaries import build_frame
+from .points import TRANSPORTS, build_points, points_from_dataframe
 from .velocities import build_velocities, healpix_domain, velocity_payload
 
 FRAME_NAME = "boundaries_{:03d}Ma.geojson"
@@ -131,6 +132,56 @@ def export_series(model_name="Merdith2021", start=0, end=250, step=1,
     return manifest_path, velocity_path
 
 
+def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
+                  anchor_plate=0, transport="rotations", fields=(), categories=None,
+                  meta=None, decimals=2, out_dir="data", filename=None, model=None,
+                  quiet=False):
+    """Reconstruct a point dataset and write it as one JSON file.
+
+    `transport` may also be 'both', which writes points.json (rotations) alongside
+    points_trajectory.json. That is worth the extra build time: reconstructing the same
+    points two independent ways and comparing is the sharpest check there is on either.
+    """
+    model = model or load_model(model_name)
+    times = list(range(start, end + 1, step))
+    os.makedirs(out_dir, exist_ok=True)
+
+    records, unassigned = points_from_dataframe(gdf, model, fields=fields)
+    if not quiet:
+        print("{} points, {} distinct plates".format(
+            len(records), len({p["plate_id"] for _, p in records})))
+
+    # A point outside every static polygon gets plate 0, which reconstructs as "does not
+    # move". On a globe that reads as a deposit sitting in the ocean while its continent
+    # sails away -- plausible enough to miss, so say it loudly.
+    if unassigned:
+        print("  WARNING: {} points fell outside every static polygon and will be "
+              "pinned at their present-day position".format(unassigned),
+              file=sys.stderr)
+
+    wanted = TRANSPORTS if transport == "both" else (transport,)
+    written = []
+
+    for mode in wanted:
+        payload = build_points(
+            model, records, times, transport=mode, anchor_plate=anchor_plate,
+            decimals=decimals, categories=categories, meta=meta,
+            model_name=model_name)
+
+        name = filename or ("points.json" if mode == "rotations"
+                            else "points_trajectory.json")
+        path = os.path.join(out_dir, name)
+        with open(path, "w") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+        written.append(path)
+
+        if not quiet:
+            print("  {:<11s} {} ({:.1f} MB)".format(
+                mode, path, os.path.getsize(path) / 1e6))
+
+    return written
+
+
 def main(argv=None):
     import argparse
 
@@ -154,13 +205,40 @@ def main(argv=None):
                    help="stage interval for velocities, Myr")
     p.add_argument("--out", default="data", help="output directory")
     p.add_argument("--quiet", action="store_true")
+
+    p.add_argument("--points", metavar="CSV",
+                   help="also reconstruct a point dataset from this CSV. Needs "
+                        "Longitude/Latitude columns and, for appearance through time, "
+                        "an Age column in Ma.")
+    p.add_argument("--point-fields", default="",
+                   help="metadata columns to carry into the popup, as "
+                        "label=Column,label=Column")
+    p.add_argument("--transport", default="rotations",
+                   choices=list(TRANSPORTS) + ["both"],
+                   help="how point positions are shipped (default: rotations). "
+                        "'rotations' scales with plates, 'trajectory' with points; "
+                        "'both' writes each and lets you compare them.")
+    p.add_argument("--points-only", action="store_true",
+                   help="skip the boundary and velocity export")
     args = p.parse_args(argv)
 
-    export_series(
-        model_name=args.model, start=args.start, end=args.end, step=args.step,
-        anchor_plate=args.anchor_plate, tessellate=args.tessellate,
-        decimals=args.decimals, healpix_n=args.healpix_n,
-        delta_time=args.delta_time, out_dir=args.out, quiet=args.quiet)
+    if not args.points_only:
+        export_series(
+            model_name=args.model, start=args.start, end=args.end, step=args.step,
+            anchor_plate=args.anchor_plate, tessellate=args.tessellate,
+            decimals=args.decimals, healpix_n=args.healpix_n,
+            delta_time=args.delta_time, out_dir=args.out, quiet=args.quiet)
+
+    if args.points:
+        import pandas as pd
+
+        fields = [tuple(part.split("=", 1))
+                  for part in args.point_fields.split(",") if "=" in part]
+        export_points(
+            pd.read_csv(args.points), model_name=args.model, start=args.start,
+            end=args.end, step=args.step, anchor_plate=args.anchor_plate,
+            transport=args.transport, fields=fields, out_dir=args.out,
+            quiet=args.quiet)
 
 
 if __name__ == "__main__":

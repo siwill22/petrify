@@ -11,16 +11,20 @@ or from the command line:
 """
 
 from .boundaries import build_frame
-from .export import export_series, load_model
+from .export import export_points, export_series, load_model
+from .points import build_points, points_from_dataframe
 from .velocities import build_velocities, healpix_domain
 from .verify import verify
 
 __all__ = [
     "build_frame",
+    "build_points",
     "build_velocities",
+    "export_points",
     "export_series",
     "healpix_domain",
     "load_model",
+    "points_from_dataframe",
     "verify",
 ]
 
