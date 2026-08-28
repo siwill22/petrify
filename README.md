@@ -1,8 +1,8 @@
 # deep-time-map
 
-Render plate reconstructions in the browser: boundary lines with subduction-polarity
-triangles, plate velocity arrows, and symbolised point datasets you can hover for detail
-— on any projection you can supply.
+Render plate reconstructions in the browser: reconstructed continent polygons, boundary
+lines with subduction-polarity triangles, plate velocity arrows, and symbolised point
+datasets you can hover for detail — on any projection you can supply.
 
 Two halves that share one data contract:
 
@@ -43,22 +43,54 @@ python -m http.server 8000
 ```
 
 ```js
-import { BoundarySeries, VelocityField, PointLayer, Orthographic }
+import { BoundarySeries, VelocityField, PointLayer, PolygonLayer, Orthographic }
   from './js/index.js';
 
 const projector = new Orthographic({ cx: 400, cy: 400, radius: 350, lon: -60, lat: 10 });
+const continents = await PolygonLayer.load('data/continents.json');
 const boundaries = await BoundarySeries.load('data/boundaries.json');
 const velocities = await VelocityField.load('data/velocities.json');
 const points = await PointLayer.load('data/points.json');
 
+continents.setTime(100);
 await boundaries.setTime(100);
 velocities.setTime(100);
 points.setTime(100);
 
+continents.draw(ctx, projector);  // first: it is the ground everything else sits on
 boundaries.draw(ctx, projector);
 velocities.draw(ctx, projector);
 points.draw(ctx, projector);      // last: symbols you cannot see, you cannot click
 ```
+
+## Polygons across the horizon
+
+`PolygonLayer` reconstructs rigid blocks -- continents, terranes, coastlines -- by rotating
+present-day geometry, and it is the one layer that needs more than `project()` from its
+host: `projector.axis`, the outward unit vector at the centre of the view.
+
+Lines can lift the pen where they pass behind the globe. A **filled** shape cannot: an open
+path closes itself with a straight chord, so a continent straddling the limb fills as a
+lens across the map. With the axis, vertices behind the horizon are clamped onto the limb
+and the ring stays closed. Without it, the layer draws outlines and nothing breaks.
+
+Two rules that look like details and are not -- getting either wrong inverts the map, ocean
+filled and land empty:
+
+- Rings **entirely** behind the horizon are skipped, not clamped. Clamping every vertex of
+  a hidden ring collapses it onto the limb, where it traces the whole disc.
+- Every ring is wound the same way before filling, because `nonzero` treats opposite
+  windings as holes and abutting terranes are not always digitised in the same sense.
+
+A third rule, about speed rather than correctness: **do not call `ctx.closePath()`** while
+accumulating many rings into one path. It is not O(1) in Blink once subpaths are piling up,
+so it goes quadratic in ring count. Measured on 727 rings of ~19,500 points, filled and
+stroked: **13.2 ms with it, 0.4 ms without**, and a `Path2D` behaves identically. Rings here
+repeat their first vertex instead, which closes them for free. On the plate-boundaries page
+that one call was 75% of all main-thread time while scrubbing the time slider.
+
+The same applies to `VelocityField`, which draws a whole arrow field as one stroked path and
+one filled path rather than two canvas calls per arrow: 803 draw calls per frame became 131.
 
 ## Points, and picking
 
@@ -172,6 +204,19 @@ python -m deep_time_map.export --points deposits.csv --transport both \
   --point-fields "name=Deposit,country=Country,cu_mt=Cu (Mt)" --out data
 ```
 
+Continent polygons come from `--polygons continents` (or `coastlines`, or `static` --
+models differ in which they carry, and Merdith2021 has continents but no coastlines):
+
+```sh
+python -m deep_time_map.export --polygons continents --tolerance 0.02 --out data
+```
+
+`--tolerance` is the furthest a vertex may move, in degrees of arc. Simplification is
+**topological**: rings are cut into arcs at their junctions and each shared arc is
+simplified once, so two blocks that touch go on touching. See
+[SCHEMA.md](SCHEMA.md#simplification-keeps-shared-boundaries-shared) — thinning each ring
+on its own instead opens holes at 9% of the seams between blocks.
+
 `--transport both` writes each representation. That costs build time but buys the sharpest
 check in the repo: the same points reconstructed two independent ways must agree, which
 tests rotation composition, anchor-plate handling and the browser's slerp at once. On a
@@ -240,6 +285,7 @@ js/
   index.js         barrel export (everything except hover.js)
   boundaries.js    BoundaryLayer, BoundarySeries
   velocities.js    VelocityField
+  polygons.js      PolygonLayer -- reconstructed continents, filled across the horizon
   points.js        PointLayer -- symbols, both transports, hit-testing
   hover.js         attachHover -- the only DOM-touching module, not in the barrel
   orthographic.js  reference projector
@@ -249,6 +295,7 @@ js/
 python/deep_time_map/
   boundaries.py    resolve topologies -> GeoJSON
   velocities.py    HEALPix velocity field
+  polygons.py      present-day rings + per-plate rotation series
   points.py        reconstruct point datasets, either transport
   export.py        series driver + CLI
   verify.py        the checks + PyGMT reference figures

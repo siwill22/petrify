@@ -182,6 +182,61 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
     return written
 
 
+def export_polygons(model_name="Merdith2021", start=0, end=250, step=1, anchor_plate=0,
+                    which="continents", tolerance=0.02, decimals=3,
+                    out_dir="data", filename=None, model=None, quiet=False):
+    """Reconstructable polygons -- continents by default -- as one file.
+
+    `which` is 'continents', 'coastlines' or 'static', matching the polygon sets a gprm
+    reconstruction model carries. Not every model has all three: Merdith2021 has continent
+    polygons but no coastlines, which is why this takes a choice rather than assuming.
+    """
+    import pygplates
+
+    from .polygons import build_polygons, polygon_payload
+
+    model = model or load_model(model_name)
+    times = list(range(start, end + 1, step))
+    os.makedirs(out_dir, exist_ok=True)
+
+    source = {
+        "continents": model.continent_polygons,
+        "coastlines": model.coastlines,
+        "static": model.static_polygons,
+    }.get(which)
+
+    if not source:
+        raise SystemExit(
+            "model {!r} has no {} polygons".format(model_name, which))
+
+    features = []
+    for item in source:
+        features.extend(pygplates.FeatureCollection(item))
+
+    payload_features, rotations, stats = build_polygons(
+        features, model.rotation_model, times, anchor_plate=anchor_plate,
+        tolerance=tolerance, decimals=decimals)
+
+    path = os.path.join(out_dir, filename or "{}.json".format(which))
+    with open(path, "w") as fh:
+        json.dump(polygon_payload(
+            payload_features, rotations, times, model_name, anchor_plate,
+            tolerance, source="{} {}".format(model_name, which)),
+            fh, separators=(",", ":"))
+
+    if not quiet:
+        print("{} {}: {} rings on {} plates, {} vertices "
+              "(from {}, {:.0f}% kept); {} arcs, {} distinct".format(
+                  model_name, which, stats["features"], stats["plates"],
+                  stats["vertices"], stats["vertices_before_simplification"],
+                  100 * stats["vertices"]
+                  / max(1, stats["vertices_before_simplification"]),
+                  stats["arcs"], stats["unique_arcs"]))
+        print("  {} ({:.1f} MB)".format(path, os.path.getsize(path) / 1e6))
+
+    return path
+
+
 def main(argv=None):
     import argparse
 
@@ -220,6 +275,11 @@ def main(argv=None):
                         "'both' writes each and lets you compare them.")
     p.add_argument("--points-only", action="store_true",
                    help="skip the boundary and velocity export")
+    p.add_argument("--polygons", choices=["continents", "coastlines", "static"],
+                   help="also export reconstructable polygons of this kind")
+    p.add_argument("--tolerance", type=float, default=0.02,
+                   help="polygon simplification tolerance, degrees of arc: the furthest "
+                        "any vertex may move (default: 0.02, about 2.2 km)")
     args = p.parse_args(argv)
 
     if not args.points_only:
@@ -228,6 +288,12 @@ def main(argv=None):
             anchor_plate=args.anchor_plate, tessellate=args.tessellate,
             decimals=args.decimals, healpix_n=args.healpix_n,
             delta_time=args.delta_time, out_dir=args.out, quiet=args.quiet)
+
+    if args.polygons:
+        export_polygons(
+            model_name=args.model, start=args.start, end=args.end, step=args.step,
+            anchor_plate=args.anchor_plate, which=args.polygons,
+            tolerance=args.tolerance, out_dir=args.out, quiet=args.quiet)
 
     if args.points:
         import pandas as pd

@@ -170,6 +170,12 @@ export class PointLayer {
       }
       this._plate = this.points.map((p) => String(p.plate_id));
       this._plates = [...new Set(this._plate)];
+      // One matrix per plate, allocated once and overwritten each frame rather than a fresh
+      // Map and 174 fresh Float64Arrays per time change.
+      this._mats = new Map();
+      for (const plate of this._plates) {
+        if (this._quats.has(plate)) this._mats.set(plate, new Float64Array(9));
+      }
     }
 
     this._style = null;
@@ -260,17 +266,15 @@ export class PointLayer {
   _setTimeRotations(time) {
     const [ia, ib, f] = this._bracket(time);
     const q = this._q;
-    const m = this._m;
     const v = this._v;
 
     // One slerp and one matrix per PLATE, not per point: this is the whole reason the
     // rotations transport is cheap on a large dataset. 1987 deposits share 174 plates.
-    const mats = new Map();
-    for (const plate of this._plates) {
+    const mats = this._mats;
+    for (const [plate, mat] of mats) {
       const series = this._quats.get(plate);
-      if (!series) continue;
       quatSlerp(series[ia], series[ib], f, q);
-      mats.set(plate, quatToMat3(q, new Float64Array(9)));
+      quatToMat3(q, mat);
     }
 
     for (let i = 0; i < this.count; i++) {

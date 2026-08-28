@@ -57,7 +57,7 @@
  * The point of this example is that it imports nothing but the library itself. If it
  * renders, the library has no hidden dependency on any particular host.
  */
-import { BoundarySeries, VelocityField, PointLayer, Orthographic }
+import { BoundarySeries, VelocityField, PointLayer, PolygonLayer, Orthographic }
   from '../js/index.js';
 // hover.js is deliberately NOT in the barrel -- it is the one module that touches the
 // DOM, so it is imported explicitly by anything that wants it.
@@ -70,7 +70,7 @@ const errEl = document.getElementById('err');
 const view = { lon: -60, lat: 10 };
 const projector = new Orthographic();
 
-let boundaries, velocities, points;
+let boundaries, velocities, points, continents;
 let time = 100;
 
 function resize() {
@@ -98,6 +98,11 @@ function draw() {
   ctx.stroke();
   ctx.restore();
 
+  // Continents first: they are the ground the rest of the map sits on. This is also the
+  // layer that needs projector.axis, so if it fills correctly across the limb the
+  // Orthographic reference projector is implementing the full contract.
+  continents?.draw(ctx, projector);
+
   boundaries?.draw(ctx, projector);
   velocities?.draw(ctx, projector);
   points?.draw(ctx, projector);      // last, so symbols stay clickable
@@ -108,6 +113,7 @@ async function setTime(t) {
   document.getElementById('t').textContent = Math.round(t);
   velocities?.setTime(t);
   points?.setTime(t);
+  continents?.setTime(t);
   draw();
   await boundaries?.setTime(t, draw);
 }
@@ -116,11 +122,12 @@ async function main() {
   resize();
   addEventListener('resize', () => { resize(); draw(); });
 
-  [boundaries, velocities, points] = await Promise.all([
+  [boundaries, velocities, points, continents] = await Promise.all([
     BoundarySeries.load('data/boundaries.json'),
     VelocityField.load('data/velocities.json'),
-    // Optional: the example still works without a point dataset.
+    // Optional: the example still works without these.
     PointLayer.load('data/points.json').catch(() => null),
+    PolygonLayer.load('data/continents.json').catch(() => null),
   ]);
 
   if (points) {

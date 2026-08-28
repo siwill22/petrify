@@ -57,6 +57,20 @@ export class Orthographic {
     return this;
   }
 
+  /**
+   * The outward unit vector at the centre of the view -- the axis the visible hemisphere
+   * is defined around.
+   *
+   * Optional part of the projector contract, needed only by layers that FILL a shape.
+   * Lines can simply lift the pen at the horizon, but a filled polygon crossing the limb
+   * has to be closed along it, which means knowing where the limb is. A projector without
+   * this can still draw every other layer.
+   */
+  get axis() {
+    const m = this._m;
+    return [m[6], m[7], m[8]];
+  }
+
   project(v) {
     const m = this._m;
     const depth = m[6] * v[0] + m[7] * v[1] + m[8] * v[2];

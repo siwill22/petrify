@@ -15,6 +15,7 @@
 export { BoundaryLayer, BoundarySeries, DEFAULT_STYLE } from './boundaries.js';
 export { VelocityField } from './velocities.js';
 export { PointLayer } from './points.js';
+export { PolygonLayer } from './polygons.js';
 export { Orthographic } from './orthographic.js';
 export { tracePolyline, packLonLat } from './polyline.js';
 export {

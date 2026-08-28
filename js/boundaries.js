@@ -254,6 +254,9 @@ export class BoundarySeries {
     this.visible = { subduction: true, ridge: true, transform: true, other: true };
     this.current = null;
     this.currentTime = null;
+    // Bumped on every setTime, so a slow fetch that lands after the reader has already
+    // scrubbed past it is discarded instead of painting a frame nobody asked for.
+    this._request = 0;
   }
 
   static async load(url, options) {
@@ -295,12 +298,32 @@ export class BoundarySeries {
   /**
    * Point the series at a time. The previously shown frame stays up until the new one
    * arrives, so scrubbing fast does not flash an empty globe.
+   *
+   * Returns synchronously when the frame is already built. That matters: after prefetchAll
+   * every frame is cached, and awaiting a resolved promise still defers `onReady` by a
+   * microtask -- long enough that the caller has already painted the old frame and has to
+   * paint again. Scrubbing over warm frames was costing two full renders per slider event
+   * for no reason.
    */
-  async setTime(time, onReady) {
+  setTime(time, onReady) {
     const frame = this.nearestFrame(time);
     if (frame.time === this.currentTime && this.current) return this.current;
 
+    const request = ++this._request;
+    const cached = this.layers.get(frame.time);
+    if (cached && cached.layer) {
+      this.current = cached.layer;
+      this.currentTime = frame.time;
+      onReady?.(frame);
+      return this.current;
+    }
+    return this._setTimeAsync(frame, onReady, request);
+  }
+
+  async _setTimeAsync(frame, onReady, request) {
     const entry = await this._load(frame);
+    // Scrubbed on while this was in flight: showing it now would jump the map backwards.
+    if (request !== this._request) return this.current;
     if (entry.layer) {
       this.current = entry.layer;
       this.currentTime = frame.time;

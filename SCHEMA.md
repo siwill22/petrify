@@ -185,6 +185,102 @@ Exporting **both** (`--transport both`) is the sharpest check available on eithe
 points reconstructed two independent ways must agree. At sampled times they agree to
 0.78 km, which is the trajectory file's own 2 dp rounding floor.
 
+## `continents.json` — reconstructable polygons
+
+Continents, terranes or coastlines. Like points, these are rigid bodies, so geometry ships
+**once at its present-day position** with a rotation series per plate. Unlike points there
+is no choice of transport: reconstructing 32,000 vertices into 251 frames is not a real
+option.
+
+Note where the bytes actually are before optimising anything: the geometry is only **16%**
+of this file. The rotation series — 425 plates × 251 times — is the other 84%.
+
+```json
+{
+  "model": "Merdith2021",
+  "anchor_plate_id": 0,
+  "simplify_tolerance_degrees": 0.02,
+  "times": [0, 1, 2, ...],
+  "rotations": { "101": [[pole_lon, pole_lat, angle_deg], ...] },
+  "features": [
+    { "p": 101, "b": 1800.0, "e": 0.0, "n": "Laurentia", "xy": [lon, lat, lon, lat, ...] }
+  ]
+}
+```
+
+| field | meaning |
+|---|---|
+| `p` | reconstruction plate ID, keying into `rotations` |
+| `b` | begin time, Ma — the **older** end of validity |
+| `e` | end time, Ma — the **younger** end. `-99999` means "still exists" (JSON has no `-Infinity`) |
+| `n` | feature name, often empty |
+| `xy` | flat present-day `lon, lat` pairs, one closed ring |
+
+Draw a feature only while `e <= t <= b`. Rings are **not** split at the antimeridian, for
+the same reason boundary lines are not.
+
+### Simplification keeps shared boundaries shared
+
+`simplify_tolerance_degrees` is the furthest any vertex was allowed to move at export.
+
+The important part is not the thinning but **how** it is done. These polygons tile against
+one another: in the Merdith2021 continent set, **76% of edges belong to more than one
+ring**. Thin each ring on its own and two neighbours end up with two different
+approximations of the boundary they share — the seam splits open and ocean shows through a
+place where two blocks were touching.
+
+That is not hypothetical. It is what the first version of this exporter did, and the
+measurements are unambiguous:
+
+| | vertices | edges shared | seam points in **no** polygon |
+|---|---:|---:|---:|
+| source | 73,968 | 76% | — |
+| per-ring decimation, 0.1° | 39,221 | 43% | **9.3%** |
+| topological, 0.02° | 31,914 | 71% | **1.0%** |
+
+The last column samples the midpoint of every boundary segment two source rings shared.
+Such a point sits on a seam between two touching blocks, so it must be inside at least one
+polygon; where it is inside none, there is a hole in the land.
+
+So the exporter simplifies the set as a whole, not a ring at a time:
+
+1. **Cut every ring into arcs at its junctions** — vertices where the set of incident rings
+   changes. This is the TopoJSON rule. Here 11,552 arcs reduce to 6,627 distinct ones.
+2. **Simplify each distinct arc once**, endpoints pinned, and give every ring that uses it
+   the *identical* vertex list, reversed where the traversal runs the other way. Neighbours
+   then agree by construction rather than by luck.
+
+**Douglas–Peucker runs on the sphere, not in lon/lat.** Deviation is the cross-track angle
+from the great circle through the arc's endpoints, `asin(|P·n̂|)` with `n̂ = A × B`
+normalised — 3-D vector maths on unit vectors. A planar DP would misjudge exactly where
+these polygons live: a degree of longitude is 111 km at the equator and a few hundred
+metres in northern Greenland, and an arc crossing the antimeridian would look like a line
+most of the way round the world. Checked against
+`pygplates.GeometryOnSphere.distance` to 3 × 10⁻⁸ rad.
+
+Pick the tolerance from the zoom limit rather than by eye. For a globe of radius
+`min(w, h) × 0.42 × zoom`, one device pixel at 4× zoom on a Retina display is about 0.021°,
+so 0.02° is invisible at any zoom such a page allows.
+
+### Filling across the horizon
+
+`PolygonLayer` needs one thing the other layers do not: `projector.axis`, the outward unit
+vector at the centre of the view. Lines can lift the pen at the horizon; a **filled** shape
+crossing the limb cannot, because an open path closes itself with a straight chord and the
+continent fills as a lens across the globe.
+
+Given the axis, a vertex behind the horizon is clamped onto the limb and the ring stays
+closed. Two things that are not optional:
+
+- **Rings entirely behind the horizon must be skipped, not clamped.** Clamping every vertex
+  of a hidden ring collapses it onto the limb, where it traces the whole disc.
+- **Every ring must be wound the same way.** `nonzero` fill treats opposite windings as
+  holes, so two abutting terranes digitised in opposite senses punch each other out.
+
+Getting either wrong inverts the map — ocean filled, land empty — which is exactly what
+happened the first time. A projector without `axis` still works; the layer falls back to
+outlines.
+
 ## Sizes, for planning
 
 Measured for Merdith2021, 0–250 Ma at 1 Myr, `--tessellate 0.5`:
@@ -195,7 +291,8 @@ Measured for Merdith2021, 0–250 Ma at 1 Myr, `--tessellate 0.5`:
 | one boundary frame | ~113 kB | ~38 kB |
 | `velocities.json` | 2.1 MB | 479 kB |
 | `points.json`, rotations, 1987 points | 1.9 MB | 623 kB |
-| `points_trajectory.json`, same points | 6.5 MB | 1.7 MB |
+| `points_trajectory.json`, same points | 6.9 MB | 1.8 MB |
+| `continents.json`, 845 rings on 426 plates | 3.8 MB | 0.97 MB |
 | manifest | 24 kB | 2 kB |
 
 Boundary frames are meant to be fetched on demand; `velocities.json` and `points.json` are

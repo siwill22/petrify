@@ -11,8 +11,9 @@ or from the command line:
 """
 
 from .boundaries import build_frame
-from .export import export_points, export_series, load_model
+from .export import export_points, export_polygons, export_series, load_model
 from .points import build_points, points_from_dataframe
+from .polygons import build_polygons
 from .velocities import build_velocities, healpix_domain
 from .verify import verify
 
@@ -20,7 +21,9 @@ __all__ = [
     "build_frame",
     "build_points",
     "build_velocities",
+    "build_polygons",
     "export_points",
+    "export_polygons",
     "export_series",
     "healpix_domain",
     "load_model",
