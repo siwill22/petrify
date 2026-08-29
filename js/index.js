@@ -7,15 +7,19 @@
  *
  * Supply an Orthographic, or anything of your own that implements it.
  *
- * Note what is NOT here: ./hover.js, which wires pointer events to a DOM popup. It is the
- * only module that touches the DOM, and keeping it out of this barrel means a consumer
- * rendering headlessly or in a worker never loads it. Import it directly if you want it.
+ * Note what is NOT here: ./hover.js and ./timeseries-panel.js, which wire pointer events to
+ * DOM elements. They are the only modules that touch the DOM, and keeping them out of this
+ * barrel means a consumer rendering headlessly or in a worker never loads them. Import them
+ * directly if you want them.
  */
 
 export { BoundaryLayer, BoundarySeries, DEFAULT_STYLE } from './boundaries.js';
 export { VelocityField } from './velocities.js';
 export { PointLayer } from './points.js';
 export { PolygonLayer } from './polygons.js';
+export {
+  TimeSeriesSet, parseCsv, seriesFromCsv, timeColumn, MODES,
+} from './timeseries.js';
 export { Orthographic } from './orthographic.js';
 export { tracePolyline, packLonLat } from './polyline.js';
 export {

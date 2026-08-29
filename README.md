@@ -1,8 +1,9 @@
 # deep-time-map
 
 Render plate reconstructions in the browser: reconstructed continent polygons, boundary
-lines with subduction-polarity triangles, plate velocity arrows, and symbolised point
-datasets you can hover for detail — on any projection you can supply.
+lines with subduction-polarity triangles, plate velocity arrows, symbolised point datasets
+you can hover for detail, and time-series charts sharing the map's clock — on any
+projection you can supply.
 
 Two halves that share one data contract:
 
@@ -182,6 +183,78 @@ PointLayer.load('data/points.json', {
 });
 ```
 
+## Time series on the same clock
+
+A globe says what the Earth looked like at time *t*. It cannot say what CO₂, sea level or
+total boundary length were doing while that happened. `TimeSeriesSet` charts those beside
+the map, keyed to the same reconstruction time.
+
+Input is **CSV, parsed in the browser** — no build step, so adding a record means dropping
+a file next to the page:
+
+```js
+import { attachTimeSeries } from './js/timeseries-panel.js';
+
+const panel = await attachTimeSeries({
+  element: document.getElementById('timeseries'),
+  sources: [{ url: 'data/co2.csv', series: { co2_ppm: { label: 'CO₂', unit: 'ppm' } } }],
+  range: [0, 250],
+  onSeek: setTime,          // clicking the chart scrubs time
+  onRender: scheduleRender, // repaint on the host's frame, not a private loop
+});
+```
+
+One stacked row per quantity, sharing the x axis. Units differ — ppm, metres, km — so a
+shared y axis is not on offer.
+
+### Which way is forwards
+
+The one thing worth reading twice. Time is in Ma, counting **down** toward the present, and
+the axis is drawn oldest-left so it matches a slider that reads like a timeline. Moving
+*forward* in time therefore moves **rightward**, and at time `T` everything that has already
+happened is *older* — `t >= T` — and lies to the **left** of the marker.
+
+`mode` chooses how that is expressed, and it is meant to be a reader-facing control:
+
+| mode | what is drawn |
+|---|---|
+| `marker` | the whole record, with a rule and a dot at the current time |
+| `shade` | the whole record, with what is still to come dimmed |
+| `reveal` | only `t >= T`, so the curve draws itself as time advances |
+| `always` | the whole record, no marker |
+
+Reversing that comparison gives a chart that looks entirely plausible and is exactly
+backwards, which is why it has a test to itself.
+
+### Details that are not decoration
+
+- **A blank cell is `null`, never `0`.** A gap lifts the pen. Drawing a missing value as
+  zero invents a collapse that is not in the record.
+- **Values do not interpolate across a gap**, for the same reason.
+- **Decimation is min/max per pixel column**, so a 100k-row record costs what the panel is
+  wide and a one-sample spike still shows. Naive subsampling steps straight over spikes.
+- **Pixel geometry is computed on resize, not per frame.** When only the time changes the
+  curve has not moved; only the split point has, and that is a binary search.
+- **The marker is a `fillRect` on integer bounds**, not a 1 px stroke. A stroke at a
+  fractional x smears across two columns at half strength; snapping the stroke instead moves
+  it by up to a whole pixel. This is crisp *and* within half a pixel — which matters when
+  the marker is supposed to sit on a slider thumb.
+
+### Lining up with a range input
+
+If the chart sits above a slider, the marker should sit on the thumb — one time axis, not
+two. A range input places its thumb **centre** at
+
+```
+x = left + W/2 + fraction * (width - W)
+```
+
+because the thumb has to stay inside the track at both ends. So inset the plot by `W/2`
+(`thumbWidth` does this). It only works if `W` is known, which means styling the thumb
+rather than leaving it native — native widths differ between browsers. Measured on the
+plate-boundaries page, marker against thumb: **+0.5 px at 0, 125 and 250 Ma, at two panel
+widths.**
+
 ## Python API
 
 ```sh
@@ -282,12 +355,14 @@ by only one topology, where there is no answer to check against.
 
 ```
 js/
-  index.js         barrel export (everything except hover.js)
+  index.js         barrel export (everything except the DOM-touching modules)
   boundaries.js    BoundaryLayer, BoundarySeries
   velocities.js    VelocityField
   polygons.js      PolygonLayer -- reconstructed continents, filled across the horizon
   points.js        PointLayer -- symbols, both transports, hit-testing
-  hover.js         attachHover -- the only DOM-touching module, not in the barrel
+  timeseries.js    TimeSeriesSet, parseCsv -- charts keyed to the reconstruction time
+  hover.js            attachHover -- DOM, not in the barrel
+  timeseries-panel.js attachTimeSeries -- DOM, not in the barrel
   orthographic.js  reference projector
   polyline.js      projection + horizon-cull loop
   rotations.js     quaternions: finite rotations and slerp
