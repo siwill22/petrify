@@ -19,6 +19,7 @@
  */
 
 import { DEG, lonLatToVec3, tangentFrame, travel } from './sphere.js';
+import { fetchMaybeGzippedJSON } from './gzipFetch.js';
 
 export const DEFAULT_OPTIONS = {
   // Arrow length: degrees of arc per km/Myr. Plate speeds top out near 210 km/Myr
@@ -68,9 +69,7 @@ export class VelocityField {
   }
 
   static async load(url, options) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    return new VelocityField(await res.json(), options);
+    return new VelocityField(await fetchMaybeGzippedJSON(url), options);
   }
 
   /** Frames are keyed by integer time; falls back to the nearest available key. */

@@ -30,6 +30,7 @@ import {
   lonLatToVec3, tangentTowards, leftOfTravel, travel, DEG,
 } from './sphere.js';
 import { tracePolyline } from './polyline.js';
+import { fetchMaybeGzippedJSON } from './gzipFetch.js';
 
 export const DEFAULT_STYLE = {
   subduction: { stroke: '#ffd8c2', width: 1.9, label: 'Subduction zone' },
@@ -105,9 +106,7 @@ export class BoundaryLayer {
   }
 
   static async load(url, options) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    return new BoundaryLayer(await res.json(), options);
+    return new BoundaryLayer(await fetchMaybeGzippedJSON(url), options);
   }
 
   /** Share a visibility object across layers, so a toggle applies to a whole series. */
@@ -257,9 +256,7 @@ export class BoundarySeries {
   }
 
   static async load(url, options) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    const manifest = await res.json();
+    const manifest = await fetchMaybeGzippedJSON(url);
     return new BoundarySeries(manifest, url.replace(/[^/]*$/, ''), options);
   }
 
