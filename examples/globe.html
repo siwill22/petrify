@@ -25,6 +25,18 @@
   input[type=range] { width: 13rem; accent-color: #8fd4f0; }
   .err { color: #ff9d9d; max-width: 26rem; }
   code { background: rgba(255,255,255,0.08); padding: 0 0.25rem; border-radius: 3px; }
+  /* pointer-events:none matters -- a popup that takes the pointer under the cursor
+     steals the hover from the canvas and flickers. */
+  .popup {
+    position: absolute; z-index: 3; max-width: 16rem; padding: 0.5rem 0.7rem;
+    border-radius: 8px; background: rgba(9,16,28,0.9);
+    border: 1px solid rgba(143,212,240,0.22); backdrop-filter: blur(8px);
+    font-size: 0.78rem; opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .popup.is-visible { opacity: 1; visibility: visible; }
+  .popup.is-pinned { pointer-events: auto; border-color: #8fd4f0; }
+  .popup b { display: block; margin-bottom: 0.15rem; }
 </style>
 </head>
 <body>
@@ -38,12 +50,18 @@
   <p class="err" id="err"></p>
 </div>
 
+<div class="popup" id="popup" role="tooltip"></div>
+
 <script type="module">
 /*
  * The point of this example is that it imports nothing but the library itself. If it
  * renders, the library has no hidden dependency on any particular host.
  */
-import { BoundarySeries, VelocityField, Orthographic } from '../js/index.js';
+import { BoundarySeries, VelocityField, PointLayer, PolygonLayer, Orthographic }
+  from '../js/index.js';
+// hover.js is deliberately NOT in the barrel -- it is the one module that touches the
+// DOM, so it is imported explicitly by anything that wants it.
+import { attachHover } from '../js/hover.js';
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -52,7 +70,7 @@ const errEl = document.getElementById('err');
 const view = { lon: -60, lat: 10 };
 const projector = new Orthographic();
 
-let boundaries, velocities;
+let boundaries, velocities, points, continents;
 let time = 100;
 
 function resize() {
@@ -80,14 +98,22 @@ function draw() {
   ctx.stroke();
   ctx.restore();
 
+  // Continents first: they are the ground the rest of the map sits on. This is also the
+  // layer that needs projector.axis, so if it fills correctly across the limb the
+  // Orthographic reference projector is implementing the full contract.
+  continents?.draw(ctx, projector);
+
   boundaries?.draw(ctx, projector);
   velocities?.draw(ctx, projector);
+  points?.draw(ctx, projector);      // last, so symbols stay clickable
 }
 
 async function setTime(t) {
   time = t;
   document.getElementById('t').textContent = Math.round(t);
   velocities?.setTime(t);
+  points?.setTime(t);
+  continents?.setTime(t);
   draw();
   await boundaries?.setTime(t, draw);
 }
@@ -96,10 +122,25 @@ async function main() {
   resize();
   addEventListener('resize', () => { resize(); draw(); });
 
-  [boundaries, velocities] = await Promise.all([
+  [boundaries, velocities, points, continents] = await Promise.all([
     BoundarySeries.load('data/boundaries.json'),
     VelocityField.load('data/velocities.json'),
+    // Optional: the example still works without these.
+    PointLayer.load('data/points.json').catch(() => null),
+    PolygonLayer.load('data/continents.json').catch(() => null),
   ]);
+
+  if (points) {
+    attachHover({
+      element: canvas,
+      popup: document.getElementById('popup'),
+      layer: points,
+      render: draw,
+      format: (p) => `<b>${p.name || 'Point'}</b>` +
+        (p.age != null ? `${p.age} Ma` : '') +
+        (p.country ? ` &middot; ${p.country}` : ''),
+    });
+  }
 
   const [lo, hi] = boundaries.timeRange;
   const slider = document.getElementById('time');

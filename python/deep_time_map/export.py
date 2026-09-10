@@ -16,6 +16,7 @@ import pygplates
 from gprm.datasets import Reconstructions
 
 from .boundaries import build_frame
+from .points import TRANSPORTS, build_points, points_from_dataframe
 from .velocities import build_velocities, healpix_domain, velocity_payload
 
 FRAME_NAME = "boundaries_{:03d}Ma.geojson"
@@ -131,6 +132,111 @@ def export_series(model_name="Merdith2021", start=0, end=250, step=1,
     return manifest_path, velocity_path
 
 
+def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
+                  anchor_plate=0, transport="rotations", fields=(), categories=None,
+                  meta=None, decimals=2, out_dir="data", filename=None, model=None,
+                  quiet=False):
+    """Reconstruct a point dataset and write it as one JSON file.
+
+    `transport` may also be 'both', which writes points.json (rotations) alongside
+    points_trajectory.json. That is worth the extra build time: reconstructing the same
+    points two independent ways and comparing is the sharpest check there is on either.
+    """
+    model = model or load_model(model_name)
+    times = list(range(start, end + 1, step))
+    os.makedirs(out_dir, exist_ok=True)
+
+    records, unassigned = points_from_dataframe(gdf, model, fields=fields)
+    if not quiet:
+        print("{} points, {} distinct plates".format(
+            len(records), len({p["plate_id"] for _, p in records})))
+
+    # A point outside every static polygon gets plate 0, which reconstructs as "does not
+    # move". On a globe that reads as a deposit sitting in the ocean while its continent
+    # sails away -- plausible enough to miss, so say it loudly.
+    if unassigned:
+        print("  WARNING: {} points fell outside every static polygon and will be "
+              "pinned at their present-day position".format(unassigned),
+              file=sys.stderr)
+
+    wanted = TRANSPORTS if transport == "both" else (transport,)
+    written = []
+
+    for mode in wanted:
+        payload = build_points(
+            model, records, times, transport=mode, anchor_plate=anchor_plate,
+            decimals=decimals, categories=categories, meta=meta,
+            model_name=model_name)
+
+        name = filename or ("points.json" if mode == "rotations"
+                            else "points_trajectory.json")
+        path = os.path.join(out_dir, name)
+        with open(path, "w") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+        written.append(path)
+
+        if not quiet:
+            print("  {:<11s} {} ({:.1f} MB)".format(
+                mode, path, os.path.getsize(path) / 1e6))
+
+    return written
+
+
+def export_polygons(model_name="Merdith2021", start=0, end=250, step=1, anchor_plate=0,
+                    which="continents", tolerance=0.02, decimals=3,
+                    out_dir="data", filename=None, model=None, quiet=False):
+    """Reconstructable polygons -- continents by default -- as one file.
+
+    `which` is 'continents', 'coastlines' or 'static', matching the polygon sets a gprm
+    reconstruction model carries. Not every model has all three: Merdith2021 has continent
+    polygons but no coastlines, which is why this takes a choice rather than assuming.
+    """
+    import pygplates
+
+    from .polygons import build_polygons, polygon_payload
+
+    model = model or load_model(model_name)
+    times = list(range(start, end + 1, step))
+    os.makedirs(out_dir, exist_ok=True)
+
+    source = {
+        "continents": model.continent_polygons,
+        "coastlines": model.coastlines,
+        "static": model.static_polygons,
+    }.get(which)
+
+    if not source:
+        raise SystemExit(
+            "model {!r} has no {} polygons".format(model_name, which))
+
+    features = []
+    for item in source:
+        features.extend(pygplates.FeatureCollection(item))
+
+    payload_features, rotations, stats = build_polygons(
+        features, model.rotation_model, times, anchor_plate=anchor_plate,
+        tolerance=tolerance, decimals=decimals)
+
+    path = os.path.join(out_dir, filename or "{}.json".format(which))
+    with open(path, "w") as fh:
+        json.dump(polygon_payload(
+            payload_features, rotations, times, model_name, anchor_plate,
+            tolerance, source="{} {}".format(model_name, which)),
+            fh, separators=(",", ":"))
+
+    if not quiet:
+        print("{} {}: {} rings on {} plates, {} vertices "
+              "(from {}, {:.0f}% kept); {} arcs, {} distinct".format(
+                  model_name, which, stats["features"], stats["plates"],
+                  stats["vertices"], stats["vertices_before_simplification"],
+                  100 * stats["vertices"]
+                  / max(1, stats["vertices_before_simplification"]),
+                  stats["arcs"], stats["unique_arcs"]))
+        print("  {} ({:.1f} MB)".format(path, os.path.getsize(path) / 1e6))
+
+    return path
+
+
 def main(argv=None):
     import argparse
 
@@ -154,13 +260,51 @@ def main(argv=None):
                    help="stage interval for velocities, Myr")
     p.add_argument("--out", default="data", help="output directory")
     p.add_argument("--quiet", action="store_true")
+
+    p.add_argument("--points", metavar="CSV",
+                   help="also reconstruct a point dataset from this CSV. Needs "
+                        "Longitude/Latitude columns and, for appearance through time, "
+                        "an Age column in Ma.")
+    p.add_argument("--point-fields", default="",
+                   help="metadata columns to carry into the popup, as "
+                        "label=Column,label=Column")
+    p.add_argument("--transport", default="rotations",
+                   choices=list(TRANSPORTS) + ["both"],
+                   help="how point positions are shipped (default: rotations). "
+                        "'rotations' scales with plates, 'trajectory' with points; "
+                        "'both' writes each and lets you compare them.")
+    p.add_argument("--points-only", action="store_true",
+                   help="skip the boundary and velocity export")
+    p.add_argument("--polygons", choices=["continents", "coastlines", "static"],
+                   help="also export reconstructable polygons of this kind")
+    p.add_argument("--tolerance", type=float, default=0.02,
+                   help="polygon simplification tolerance, degrees of arc: the furthest "
+                        "any vertex may move (default: 0.02, about 2.2 km)")
     args = p.parse_args(argv)
 
-    export_series(
-        model_name=args.model, start=args.start, end=args.end, step=args.step,
-        anchor_plate=args.anchor_plate, tessellate=args.tessellate,
-        decimals=args.decimals, healpix_n=args.healpix_n,
-        delta_time=args.delta_time, out_dir=args.out, quiet=args.quiet)
+    if not args.points_only:
+        export_series(
+            model_name=args.model, start=args.start, end=args.end, step=args.step,
+            anchor_plate=args.anchor_plate, tessellate=args.tessellate,
+            decimals=args.decimals, healpix_n=args.healpix_n,
+            delta_time=args.delta_time, out_dir=args.out, quiet=args.quiet)
+
+    if args.polygons:
+        export_polygons(
+            model_name=args.model, start=args.start, end=args.end, step=args.step,
+            anchor_plate=args.anchor_plate, which=args.polygons,
+            tolerance=args.tolerance, out_dir=args.out, quiet=args.quiet)
+
+    if args.points:
+        import pandas as pd
+
+        fields = [tuple(part.split("=", 1))
+                  for part in args.point_fields.split(",") if "=" in part]
+        export_points(
+            pd.read_csv(args.points), model_name=args.model, start=args.start,
+            end=args.end, step=args.step, anchor_plate=args.anchor_plate,
+            transport=args.transport, fields=fields, out_dir=args.out,
+            quiet=args.quiet)
 
 
 if __name__ == "__main__":

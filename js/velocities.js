@@ -96,6 +96,12 @@ export class VelocityField {
     return kmPerMyr * this.options.scale * DEG * radiusPx;
   }
 
+  /*
+   * Every arrow is the same colour and the same width, so the whole field is two canvas
+   * operations: one stroke for all the shafts, one fill for all the heads. Issuing a
+   * stroke() and a fill() per arrow meant ~760 separate draw calls per frame on a dense
+   * field, and each one carries fixed overhead no matter how short the line is.
+   */
   draw(ctx, projector) {
     if (!this.visible || !this.current) return;
     const [ve, vn] = this.current;
@@ -106,6 +112,11 @@ export class VelocityField {
     ctx.fillStyle = colour;
     ctx.lineWidth = shaftWidth;
     ctx.lineCap = 'round';
+
+    // Projected arrow endpoints, four numbers each, into a reused array so a dense field
+    // costs no allocation per frame.
+    const ends = this._ends || (this._ends = []);
+    ends.length = 0;
 
     const base = this._base, dir = this._dir, tip = this._tip;
 
@@ -132,38 +143,44 @@ export class VelocityField {
       const b = projector.project(tip);
       if (!b) continue;                     // arrow would run off the visible side
 
-      this._arrow(ctx, a[0], a[1], b[0], b[1]);
+      ends.push(a[0], a[1], b[0], b[1]);
     }
 
-    ctx.restore();
-  }
-
-  /** Shaft plus a filled head, both in screen space. */
-  _arrow(ctx, x0, y0, x1, y1) {
     const { headLength, headWidth } = this.options;
-    const dx = x1 - x0;
-    const dy = y1 - y0;
-    const len = Math.hypot(dx, dy);
-    if (len < 1.5) return;                  // degenerate once foreshortened
+    const w = headWidth * 0.5;
 
-    const ux = dx / len;
-    const uy = dy / len;
-
-    // Stop the shaft where the head begins so the point stays sharp.
-    const head = Math.min(headLength, len * 0.6);
+    // Pass 1: every shaft into one path, one stroke.
     ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    ctx.lineTo(x1 - ux * head, y1 - uy * head);
+    for (let i = 0; i < ends.length; i += 4) {
+      const x0 = ends[i], y0 = ends[i + 1], x1 = ends[i + 2], y1 = ends[i + 3];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      if (len < 1.5) continue;              // degenerate once foreshortened
+      const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+      // Stop the shaft where the head begins so the point stays sharp.
+      const head = Math.min(headLength, len * 0.6);
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1 - ux * head, y1 - uy * head);
+    }
     ctx.stroke();
 
-    const px = -uy;                         // perpendicular, screen space
-    const py = ux;
-    const w = headWidth * 0.5;
+    // Pass 2: every head into one path, one fill. The triangles are closed by repeating
+    // the first vertex rather than with closePath(), which is not O(1) in Blink once
+    // subpaths are being accumulated -- the same trap that made the continent fill quadratic.
     ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x1 - ux * head + px * w, y1 - uy * head + py * w);
-    ctx.lineTo(x1 - ux * head - px * w, y1 - uy * head - py * w);
-    ctx.closePath();
+    for (let i = 0; i < ends.length; i += 4) {
+      const x0 = ends[i], y0 = ends[i + 1], x1 = ends[i + 2], y1 = ends[i + 3];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      if (len < 1.5) continue;
+      const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+      const head = Math.min(headLength, len * 0.6);
+      const px = -uy, py = ux;              // perpendicular, screen space
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x1 - ux * head + px * w, y1 - uy * head + py * w);
+      ctx.lineTo(x1 - ux * head - px * w, y1 - uy * head - py * w);
+      ctx.lineTo(x1, y1);
+    }
     ctx.fill();
+
+    ctx.restore();
   }
 }
