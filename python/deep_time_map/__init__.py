@@ -8,27 +8,32 @@ or from the command line:
 
     python -m deep_time_map.export --model Merdith2021 --end 250 --out data
     python -m deep_time_map.verify --data data --time 100
+    python -m deep_time_map.timeseries --data data
 """
 
 from .boundaries import build_frame
 from .export import export_points, export_polygons, export_series, load_model
 from .points import build_points, points_from_dataframe
 from .polygons import build_polygons
+from .timeseries import boundary_length_series, by_boundary_type, length_series
 from .velocities import build_velocities, healpix_domain
 from .verify import verify
 
 __all__ = [
+    "boundary_length_series",
     "build_frame",
     "build_points",
     "build_velocities",
     "build_polygons",
+    "by_boundary_type",
     "export_points",
     "export_polygons",
     "export_series",
     "healpix_domain",
+    "length_series",
     "load_model",
     "points_from_dataframe",
     "verify",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

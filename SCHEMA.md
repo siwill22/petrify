@@ -281,6 +281,36 @@ Getting either wrong inverts the map — ocean filled, land empty — which is e
 happened the first time. A projector without `axis` still works; the layer falls back to
 outlines.
 
+## `boundary_length.csv` — a derived time series, optional
+
+Not written by `export`. `python -m deep_time_map.timeseries --data data` reads an
+already-exported `frames/boundaries_<NNN>Ma.geojson` series and writes total arc
+length in km, grouped by `boundary_type`, per frame:
+
+```csv
+time_ma,subduction_km,ridge_km,transform_km,other_km,total_km
+0.0,43075.2,67851.9,28940.1,19204.5,159071.7
+1.0,43012.8,67902.3,28887.4,19198.0,159000.5
+```
+
+- `time_ma` is what `js/timeseries.js`'s `timeColumn()` matches on — any column
+  named `time`/`age`/`ma`/`t` (optionally `_`-suffixed) is taken as the time axis;
+  first column otherwise.
+- Every other numeric column is a plottable series. `seriesFromCsv()` plots all of
+  them by default, or a caller-chosen subset via its `spec` argument — `total_km` is
+  written for completeness, not because every chart should show it.
+- Length is measured **on the sphere**: pygplates' arc length in radians, scaled by
+  Earth's radius. Not affected by tessellation density, since subdividing a
+  great-circle arc leaves its length unchanged.
+- The grouping (`boundary_type`, falling back to `other`) is `timeseries.py`'s
+  default, not its only mode — `length_series()` takes any `feature -> group key`
+  function, so a consumer measuring something else (e.g. subduction length matched
+  against a separate point dataset) gets the same frame-reading and arc-length
+  machinery via its own grouping function, and writes its own CSV with `write_csv()`.
+  See `python/deep_time_map/timeseries.py`'s own docstring, and docs/adr/0001 for why
+  that split — generic arc-length/grouping mechanics here, "what counts as a group"
+  left to the caller — is deliberate.
+
 ## Sizes, for planning
 
 Measured for Merdith2021, 0–250 Ma at 1 Myr, `--tessellate 0.5`:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "deep-time-map"
-version = "0.1.0"
+version = "0.2.0"
 description = "Export plate reconstructions as web-ready JSON for deep-time maps"
 readme = "../README.md"
 requires-python = ">=3.9"
@@ -22,6 +22,7 @@ verify = ["pygmt"]
 [project.scripts]
 deep-time-map-export = "deep_time_map.export:main"
 deep-time-map-verify = "deep_time_map.verify:main"
+deep-time-map-timeseries = "deep_time_map.timeseries:main"
 
 [tool.setuptools.packages.find]
 include = ["deep_time_map*"]
