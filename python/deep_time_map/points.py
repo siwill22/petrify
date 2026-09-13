@@ -95,6 +95,22 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
     rather than loud, so the caller is told the count.
 
     `age_field` is the formation age in Ma. A point exists from then to the present.
+
+    Each record also carries `plate_begin_age`: the assigned static polygon's own begin
+    age (`pygplates.PartitionProperty.valid_time_begin`), i.e. how far back that specific
+    piece of crust is a geologically meaningful assignment at all -- a static polygon is
+    digitized in present-day space and rotated backward, so it is always crust that
+    survives to today, but that same construction means the polygon (and the plate id it
+    hands out) has no meaning before its own begin age. Reconstructing a point older than
+    that silently does not fail: `pygplates` holds the oldest defined rotation pole fixed
+    rather than erroring, so an over-old point just stops moving instead of reporting
+    anything wrong. This is a mechanism, not a policy, the same "export carries WHERE, the
+    renderer decides WHEN" split as `age` above -- whether to exclude such a point, flag
+    it, or ignore the field entirely is left to the caller. `None` (not a numeric age)
+    when no polygon was assigned at all (plate 0): the point's own valid time is left
+    untouched in that case (see below), so its begin age is technically "distant past",
+    which would serialise as Infinity, not valid JSON -- reported as `None` instead, the
+    same "not recorded" convention `_clean()` already uses for NaN.
     """
     features = []
     meta = []
@@ -132,7 +148,9 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
 
     partitioned = pygplates.partition_into_plates(
         model.static_polygons if polygons == "static" else model.continent_polygons,
-        model.rotation_model, features)
+        model.rotation_model, features,
+        properties_to_copy=[pygplates.PartitionProperty.reconstruction_plate_id,
+                             pygplates.PartitionProperty.valid_time_begin])
 
     # Restore input order using the index carried on each feature, so the metadata list
     # and the geometry list stay aligned.
@@ -145,6 +163,8 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
             unassigned += 1
         record = dict(meta[index])
         record["plate_id"] = plate_id
+        begin, _ = feature.get_valid_time()  # always plain floats, inf for distant past
+        record["plate_begin_age"] = None if math.isinf(begin) else round(float(begin), 4)
         ordered[index] = (feature, record)
 
     missing = [i for i, item in enumerate(ordered) if item is None]

@@ -107,7 +107,7 @@ Common to both:
   "times": [0, 1, 2, ...],
   "categories": { "Cu-por": { "symbol": "hexagon", "family": "Cu", "label": "Porphyry Cu" } },
   "points": [
-    { "lon": -66.28, "lat": -27.3708, "age": 5.5, "plate_id": 22032,
+    { "lon": -66.28, "lat": -27.3708, "age": 5.5, "plate_id": 22032, "plate_begin_age": 45.0,
       "type": "Cu-por", "name": "Agua Rica", "country": "Argentina", "cu_mt": 7.3962 }
   ],
   "meta": { "source": "...", "doi": "...", "caption": "..." }
@@ -119,6 +119,14 @@ Common to both:
   renderer decides *when*. That separation is load-bearing: a consumer showing points in a
   window *around* their age needs positions from before the point existed, and an export
   that filtered by age would have thrown those away.
+- `plate_begin_age` is the assigned static polygon's own begin age -- how far back that
+  specific piece of crust is a meaningful assignment at all, `null` if the point fell
+  outside every polygon (`plate_id: 0`). Same split as `age` above: the export carries
+  *how far back this plate id is geologically valid*, the renderer/consumer decides
+  what to do with a point whose own `age` exceeds it (exclude, flag, or ignore) --
+  `pygplates` does not error on an over-old reconstruction, it silently holds the
+  oldest defined rotation pole fixed, so a point past its assigned polygon's begin age
+  just stops moving rather than reporting anything wrong.
 - Everything else in a `points[]` entry is free-form metadata, carried through untouched
   for the popup. Keys are whatever `--point-fields` mapped.
 - `categories` keys match `points[].type`. **No colours here**: the palette belongs to the

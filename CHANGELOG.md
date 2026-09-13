@@ -4,6 +4,26 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.3.0
+
+- **`points_from_dataframe()` exposes `plate_begin_age`** — the assigned static
+  polygon's own begin age, alongside the `plate_id` it already returned. Motivated by a
+  real bug in a downstream consumer (StoryMaps' `detrital-zircons` prototype): a sample
+  older than the static polygon its plate id came from silently reconstructed as
+  motionless, since `pygplates` holds a plate's oldest defined rotation fixed rather
+  than erroring on an over-old query, instead of any visible failure. Geode's own
+  Plate-Frame Point feature (`docs/adr/0025`) already enforces exactly this rule
+  (`age > assignedFeature.beginAge` -> no plate here yet) but only for that one
+  click-time, TypeScript-side path — this is the same fact made available to any
+  Python-side consumer of `points_from_dataframe`/`build_points`, most relevantly
+  Geode's own planned `prep_paleomag.py` (`docs/adr/0029`), which has the identical
+  failure mode for a VGP reconstructed to an age older than its sample site's assigned
+  polygon. A mechanism, not a policy: this adds the field, it does not filter or null
+  anything out — what a caller does with an over-old point (exclude at build time,
+  flag at render time, ignore) is left to it, the same "export carries WHERE, renderer
+  decides WHEN" split `age` itself already follows. `null` (not `Infinity`, not valid
+  JSON) for a point that fell outside every polygon.
+
 ## v0.2.0
 
 - **`deep_time_map.timeseries`** — arc length of boundary segments, grouped
