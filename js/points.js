@@ -219,6 +219,7 @@ export class PointLayer {
    * hiding a point because its age was not recorded would quietly drop data.
    */
   isLive(point, time) {
+    if (!this._plateValidAt(point, time)) return false;
     switch (this.options.lifespan) {
       case 'always':
         return true;
@@ -240,6 +241,27 @@ export class PointLayer {
       default:
         return point.age == null || time <= point.age;
     }
+  }
+
+  /**
+   * Is `time` within the geologically meaningful window of this point's assigned
+   * plate? `points_from_dataframe()` exposes `plate_begin_age` (see SCHEMA.md) -- the
+   * assigned static polygon's own begin age -- because `pygplates` does not error on
+   * reconstructing a point older than that: it silently holds the plate's oldest
+   * defined rotation pole fixed instead. Left unchecked, an over-old point does not
+   * disappear or complain, it just stops moving, which reads as "this category never
+   * moves" rather than "this assignment stopped being meaningful" (the bug a Geode
+   * consumer hit and reported upstream). A point assigned NO plate at all (`plate_id:
+   * 0`, `plate_begin_age: null`) has no crust history whatsoever behind it -- valid
+   * only at the present day, the same as a beginAge of 0.
+   *
+   * Absent for datasets that never went through `points_from_dataframe()` (both fields
+   * `undefined`, not `null`) -- always valid, unchanged from before this check existed.
+   */
+  _plateValidAt(point, time) {
+    if (point.plate_begin_age != null) return time <= point.plate_begin_age;
+    if (point.plate_id === 0) return time <= 0;
+    return true;
   }
 
   /** How many points are currently drawable, optionally of one type. */

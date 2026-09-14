@@ -4,6 +4,29 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.4.0
+
+- **`PointLayer.isLive()` enforces `plate_begin_age`** — a point is no longer drawn
+  (any `lifespan` mode, either transport) at a time older than its assigned plate's own
+  begin age, or, for an unassigned point (`plate_id: 0`), any time other than the
+  present. v0.3.0 added `plate_begin_age` as pure metadata and left consuming it to
+  each caller; a real consumer (Geode's Boucot paleolithology layer) then shipped
+  without ever reading it, and a user found the result empirically: geologically real
+  Cretaceous mid-Pacific samples (e.g. a Resolution Guyot reef-limestone site) sitting
+  frozen at their present-day position century after century as the age slider moved,
+  because `plate_id: 0` carries an identity rotation forever. Broader still: 115 of
+  8698 points in that same dataset were assigned a real plate whose own static polygon
+  begins later than the point's own age — same silent freeze, just less obviously
+  wrong since the plate id isn't 0. Both are `pygplates`' own documented behavior
+  (holds the oldest defined pole fixed rather than erroring), so nothing was
+  "computed incorrectly" — the number was just never checked against the field
+  exposed for exactly this purpose. Moving the check into `isLive()` itself, rather
+  than leaving every consumer to re-derive it, is what v0.3.0's own changelog entry
+  already reasoned through for the export half; this is the render-time half of the
+  same fix. Backward compatible: a point from a dataset that never went through
+  `points_from_dataframe()` has neither field (`undefined`, not `null`), and
+  `isLive()` treats that exactly as before.
+
 ## v0.3.0
 
 - **`points_from_dataframe()` exposes `plate_begin_age`** — the assigned static

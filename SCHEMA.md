@@ -167,6 +167,13 @@ That is the renderer's job, via `PointLayer`'s `lifespan` option:
 Points with **no age are always shown** — a missing age means unknown, and hiding a point
 because nobody recorded its age would quietly drop data.
 
+Independent of `lifespan`, `isLive()` also enforces `plate_begin_age`: a point is never
+live at a time older than its assigned plate's own begin age (or, for `plate_id: 0`,
+older than the present day) — see `PointLayer.isLive()`'s own doc comment. Reconstructing
+further back doesn't error, `pygplates` just holds the oldest defined rotation pole
+fixed, so without this check an over-old point would silently stop moving instead of
+disappearing.
+
 `'window'` changes the character of a map completely. On the 1987-deposit dataset with
 `ageWindow: 5`, a mean of **30 deposits** are visible at once instead of ~1000, and the
 Andean porphyry belt resolves into a line along the trench that was invisible before. The
