@@ -4,6 +4,89 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.5.0
+
+- **`AggregateLayer` + `aggregates.json`: summarised points, one glyph per equal-area
+  cell.** `PointLayer` answers "where is each thing?"; a dataset of tens of thousands of
+  occurrences cannot answer "what is here, and how much of it?" that way, because at ~3.4 px
+  a symbol the categories overlap into a cloud in which none is legible. Measured on the
+  motivating dataset: 68,641 PBDB coral occurrences, where the individual-symbol view is a
+  density smear and the question being asked ("which taxon dominates here, and when did that
+  change?") is invisible in it. The layer draws a pie or a dominant-category disc per
+  occupied cell, sized by count or by distinct-taxon richness.
+  Three things it deliberately does **not** do, each documented in SCHEMA.md: it does not
+  implement the grid (cell centres ship in the payload, so swapping to HEALPix is an
+  exporter-only change and the same tessellation is never written twice in two languages);
+  it does not interpolate between frames (a cell has no correspondence across time the way a
+  rigid point does — contents change by membership, not motion — so it cuts hard like
+  `BoundarySeries`); and it does not know what the categories mean, per ADR-0001.
+
+- **`deep_time_map.aggregate`: `EqualAreaGrid`, `build_aggregates`, `build_latitude`.**
+  The grid is exactly equal-area by construction — rings of equal area (equal steps in
+  sin φ), each cut into the same number of longitude divisions, so every cell is exactly
+  `4π / (rings × lon_cells)` steradians. `verify_equal_area()` checks it by Monte Carlo
+  and it passes to within √n counting noise. This is not a refinement over a lon/lat
+  degree grid, it is a correctness fix: degree cells shrink as cos φ, so counting into
+  them inflates apparent density toward the poles, which is fatal for exactly the
+  latitudinal-gradient question this was built for. Cost, stated rather than hidden: polar
+  cells are elongated north–south. No new dependency — `healpy` is not installed in the
+  environment this was written for, and adding one to get a better aspect ratio was not
+  worth it when the property that matters (equal area) is available in five lines.
+  `build_aggregates()` reuses the **same** `rotations` block `build_points()` writes and
+  duplicates `PointLayer.isLive()`'s rule exactly, including the `plate_begin_age` check
+  v0.4.0 added — if either diverged, a pie would summarise points the map does not draw
+  and nothing on screen would show it.
+
+- **`attachLatitudePanel` + `latitude.json`: the whole record on two axes.** A globe shows
+  one age; scrubbing reveals a trend only to someone already watching for one, and never in
+  a screenshot. Latitude up, age across, coloured by the active Grouping. Two axis
+  conventions that differ from `aggregates.json`'s and are documented at both ends: age bins
+  keep their **true widths** (ICS stages run from under 1 Myr to 21.6, and equal columns
+  would hide that a long bin accumulates more taxa by lasting longer), and latitude bands
+  are equal in **degrees, not area** (this axis is read as latitude; equal-area bands would
+  be nonlinear and put the tropics across most of the height). Band totals are therefore not
+  area-normalised, which SCHEMA.md says outright so nobody reads them as densities.
+  A DOM module, so it stays out of `index.js` alongside `hover.js` and
+  `timeseries-panel.js`.
+
+- **`PointLayer.load()` and the new loaders go through `fetchMaybeGzippedJSON`.**
+  `gzipFetch.js` has existed since the boundary frames needed it, but `PointLayer` still
+  used a bare `fetch().json()`, so the one payload most likely to run to megabytes was the
+  one that could not be pre-gzipped. A real export measured while writing this release is
+  68,641 points; a static host (GitHub Pages) will not compress that for you. Behaviour on
+  a non-`.gz` URL is byte-for-byte unchanged, since the helper sniffs the gzip magic number
+  rather than trusting the extension.
+
+- **`rotation_block()` is public.** It was `_rotation_block`, private, and the new
+  aggregation path needs exactly it: a consumer summarising the same points a different
+  way must reconstruct them with the identical rotations rather than making an
+  independent `pygplates.reconstruct` call. Reaching into a private name to get that
+  would have been the wrong seam.
+
+- **`attachLatitudePanel` builds its return object before bootstrapping.** Its
+  `setGrouping()` returns `api` so calls can chain, and the bootstrap call at the end
+  of the function ran while that `const` was still in its temporal dead zone -- a
+  `ReferenceError` on first load, every single time. Found by the first consumer to
+  actually render it. Recorded because "returns itself for chaining" plus "called
+  during construction" is a combination that will recur.
+
+- **Time direction is an explicit option on BOTH panels, and they share one axis
+  geometry.** `timeseries.js` had always put the oldest time on the left; the new
+  `latitude-panel.js` put the present there. Stacked in a consumer, as they are meant to
+  be, that produced two charts on what a reader takes to be one shared age axis running
+  in opposite directions -- which does not look like a misconfiguration, it looks like the
+  data is wrong. Both now take `timeDirection: 'oldest-left' | 'present-left'`, defaulting
+  to this library's original `'oldest-left'` so nothing that exists today changes.
+  Direction alone was not enough: the latitude panel also reserved a 30 px gutter for its
+  latitude labels while the time-series panel insets by half a thumb width, so a given age
+  still landed up to 23 px apart. The latitude labels moved inside the plot and both now
+  inset by the same `inset`, so the axes agree by construction. The consuming viewer
+  measures it (`npm run check:paleobio` reports the two cursors' x at five ages).
+
+- **`attachLatitudePanel` builds its return object before bootstrapping.** A diversity-through-time curve is a CSV and
+  `timeseries-panel.js` already reads those, so the consumer that motivated this release
+  needs nothing new for it. Recorded because the obvious move was to add one.
+
 ## v0.4.0
 
 - **`PointLayer.isLive()` enforces `plate_begin_age`** — a point is no longer drawn

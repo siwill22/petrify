@@ -187,21 +187,39 @@ export class TimeSeriesSet {
   setTime(time) { this.currentTime = time; return this; }
   setGhost(time) { this.ghostTime = time; return this; }
 
+  /**
+   * Which end of the x axis the present sits at.
+   *
+   * 'oldest-left' (the default, and this library's original and only behaviour)
+   * puts hi at x0, so time runs left-to-right in reading order. 'present-left'
+   * puts lo at x0, which is what a host whose age slider runs 0 on the left needs
+   * if its chart is to line up with the slider rather than mirror it.
+   *
+   * Explicit because this library now ships TWO time-axis panels -- this one and
+   * latitude-panel.js -- and they disagreed silently when the second was added.
+   * Two charts stacked on what the reader takes to be one shared axis, running
+   * opposite ways, is not a misconfiguration anyone spots: it just looks like the
+   * data is wrong.
+   */
+  get presentLeft() {
+    return this.options.timeDirection === 'present-left';
+  }
+
   /** Time at a canvas x, inverse of the layout's x mapping. */
   timeAt(x) {
     const L = this._layout;
     if (!L) return null;
     const f = (x - L.x0) / (L.x1 - L.x0);
     const [lo, hi] = this.range;
-    // x increases to the right and time DECREASES to the right: hi (oldest) is at x0.
-    return hi - f * (hi - lo);
+    return this.presentLeft ? lo + f * (hi - lo) : hi - f * (hi - lo);
   }
 
   xFor(time) {
     const L = this._layout;
     if (!L) return null;
     const [lo, hi] = this.range;
-    const f = hi === lo ? 0 : (hi - time) / (hi - lo);
+    if (hi === lo) return L.x0;
+    const f = this.presentLeft ? (time - lo) / (hi - lo) : (hi - time) / (hi - lo);
     return L.x0 + f * (L.x1 - L.x0);
   }
 

@@ -30,6 +30,7 @@
  */
 
 import { lonLatToVec3 } from './sphere.js';
+import { fetchMaybeGzippedJSON } from './gzipFetch.js';
 import { quatFromPoleAngle, quatSlerp, quatToMat3, mat3Apply } from './rotations.js';
 
 export const DEFAULT_SYMBOLS = {
@@ -190,9 +191,11 @@ export class PointLayer {
   }
 
   static async load(url, options) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    return new PointLayer(await res.json(), options);
+    // Transparently un-gzips a `.gz` URL. A real point export runs to megabytes and a
+    // static host will not compress it for you, so the choice to pre-gzip belongs to the
+    // deployment rather than to page code -- see gzipFetch.js for why sniffing the bytes
+    // beats trusting the extension.
+    return new PointLayer(await fetchMaybeGzippedJSON(url), options);
   }
 
   /** Bracketing sample indices and the fraction between them, for a time in Ma. */

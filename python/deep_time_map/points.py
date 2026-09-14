@@ -215,6 +215,17 @@ def build_points(model, records, times, transport="rotations", anchor_plate=0,
     return payload
 
 
+def rotation_block(model, plate_ids, times, anchor_plate=0):
+    """Public name for the per-plate rotation series `build_points` embeds.
+
+    Exposed because a consumer summarising the SAME points a different way (binning
+    them into cells, say) must reconstruct them with the identical rotations, not an
+    independent `pygplates.reconstruct` call -- otherwise the summary describes points
+    that are not where the map draws them, with nothing on screen to show it.
+    """
+    return _rotation_block(model, plate_ids, times, anchor_plate)
+
+
 def _rotation_block(model, plate_ids, times, anchor_plate):
     """[pole_lon, pole_lat, angle_deg] per plate per time.
 

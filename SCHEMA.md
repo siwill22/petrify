@@ -200,6 +200,131 @@ Exporting **both** (`--transport both`) is the sharpest check available on eithe
 points reconstructed two independent ways must agree. At sampled times they agree to
 0.78 km, which is the trajectory file's own 2 dp rounding floor.
 
+## `aggregates.json` — summarised points, one glyph per cell
+
+What `points.json` cannot answer. At a few pixels a symbol, tens of thousands of points
+overlap into a density cloud in which no category is legible, so this ships counts per
+**cell** per time instead of positions per point.
+
+```json
+{
+  "model": "Scotese",
+  "grid": { "kind": "equal-area-rings", "rings": 40, "lon_cells": 80,
+            "cells": 3200, "cell_area_sr": 0.0039269908 },
+  "times": [0, 5, 10],
+  "cell_centres": [[-177.75, -77.1614], ...one per cell, indexed by cell id...],
+  "default_grouping": "subclass",
+  "groupings": {
+    "subclass": {
+      "label": "Subclass",
+      "category_order": ["Rugosa", "Tabulata", "Scleractinia"],
+      "categories": { "Rugosa": { "label": "Rugose corals", "fill": "rgb(214,96,77)" } },
+      "frames": {
+        "0": { "cells": [1204, 1287], "counts": [[0, 0, 31], [0, 0, 7]],
+               "richness": [12, 5] }
+      }
+    }
+  },
+  "lifespan": "range",
+  "richness_field": "genus",
+  "meta": { "source": "...", "caption": "..." }
+}
+```
+
+- `frames` is keyed by **stringified time**, like `points_trajectory.json`'s. Only
+  **occupied** cells appear; `cells[i]`, `counts[i]` and `richness[i]` are parallel.
+- `counts[i]` is parallel to `category_order`, never to an ad-hoc per-cell ordering — a
+  wedge must keep its angular position between frames or the glyph appears to spin.
+- `richness` is the count of **distinct** `richness_field` values in the cell, which is a
+  different question from the total and usually the one worth plotting.
+
+### The renderer does not implement the grid
+
+`cell_centres` ships lon/lat per cell so `AggregateLayer` never needs to know the
+tessellation. That is the same "one implementation, not two" rule the rest of this file is
+about: a grid written once in Python and once in JavaScript would drift, and the drift
+would be invisible — glyphs in almost the right places. Swapping the grid (HEALPix, say)
+is therefore an exporter change with **no** renderer change.
+
+The cost is that a consumer can draw marks *at* cell centres but cannot draw cell
+**boundaries**, because it does not know where they are. Deliberate.
+
+### Equal area, exactly, and what it costs
+
+`EqualAreaGrid` divides the sphere into `rings` bands of equal area (equal steps in
+sin φ), each cut into `lon_cells` equal divisions. Every cell has area exactly
+`4π / (rings × lon_cells)` steradians — by construction, not approximately.
+`verify_equal_area()` confirms it by Monte Carlo: uniform points land in each cell in
+proportion to its area, so the occupancy histogram is flat to within `√n` counting noise.
+
+A lon/lat degree grid would have been wrong, not merely coarser: its cells shrink as
+cos φ, so counting into one inflates apparent density toward the poles — fatal for
+anything read as a latitudinal gradient.
+
+What was traded for that: cells near the poles are elongated north–south (a 40-ring
+grid's top ring spans ~13° of latitude against 4.5° of longitude). A HEALPix grid would
+fix the aspect ratio, and needs no change outside `aggregate.py`.
+
+### Frames are not interpolated
+
+`PointLayer` slerps between samples because a point is a rigid body with correspondence
+across time — the same deposit, somewhere else. A **cell** has no such correspondence: as
+plates move, points cross cell boundaries, so a cell's contents change by membership, not
+by motion. Interpolating a count would invent fractional occurrences, possibly in a cell
+that is not even the neighbour involved. `AggregateLayer` therefore snaps to the nearest
+sample and cuts hard, for the same reason `BoundarySeries` does.
+
+### Positions agree with `points.json` by construction
+
+`build_aggregates()` takes the **same** `rotations` block `build_points()` writes and
+applies the same rotation, rather than making an independent `pygplates.reconstruct` call.
+It also duplicates `PointLayer.isLive()`'s rule exactly (`live_mask`), including the
+`plate_begin_age` check. If either diverged, a pie would summarise points the map does not
+draw, and nothing on screen would reveal it.
+
+## `latitude.json` — latitude against age
+
+A globe shows one age. This is the whole record on two axes, so a poleward retreat or a
+range crossing a new connection is a shape rather than something the reader has to
+remember having scrubbed past.
+
+```json
+{
+  "model": "Scotese",
+  "bands": [{ "from": -90, "to": -85 }, ...],
+  "bins":  [{ "name": "Aeronian", "from": 440.8, "to": 438.5 }, ...],
+  "bin_ages": [439.65, ...],
+  "default_grouping": "subclass",
+  "groupings": {
+    "subclass": {
+      "label": "Subclass",
+      "category_order": ["Rugosa", "Tabulata", "Scleractinia"],
+      "categories": { "Rugosa": { "fill": "rgb(214,96,77)" } },
+      "counts": [ [ [0, 0, 3], ...one per band... ], ...one per bin... ]
+    }
+  }
+}
+```
+
+- `counts[bin][band][category]`. `bins` are **stratigraphic** intervals with their own
+  uneven widths (ICS stages run from under 1 Myr to 21.6), *not* the uniform sampling step
+  `aggregates.json` uses. `attachLatitudePanel` draws each bin's column at its true width,
+  so the unevenness stays visible — a long bin accumulates more taxa purely by lasting
+  longer, which is the easiest way to misread a diversity record.
+- `bin_ages[i]` is the age bin *i* was reconstructed at (normally its midpoint). The
+  `rotations` passed to `build_latitude()` must be sampled at exactly these ages.
+- A record is counted in **exactly one** bin or none (`bin_of == -1`). A record whose age
+  range spans two stages constrains neither, and splitting it between them would invent
+  precision the fossil does not have.
+
+### Bands are equal in degrees, not equal in area
+
+Unlike `aggregates.json`'s cells, and for a reason: this axis is read as *latitude*.
+Equal-area bands (equal in sin φ) would remove the cos φ sampling bias but put a
+nonlinear axis in front of the reader, with the tropics filling most of the height. So
+band totals are **not** area-normalised — a 60° band covers half the surface of an
+equatorial one — and must not be read as densities.
+
 ## `continents.json` — reconstructable polygons
 
 Continents, terranes or coastlines. Like points, these are rigid bodies, so geometry ships
