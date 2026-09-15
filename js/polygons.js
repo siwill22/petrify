@@ -6,11 +6,16 @@
  * per frame would mean tens of thousands of vertices times hundreds of frames; here it is
  * one matrix per plate per frame and a matrix multiply per vertex.
  *
- * ---- Why this does not use tracePolyline ----------------------------------------------
+ * ---- Why filling does not use tracePolyline -------------------------------------------
  *
  * tracePolyline lifts the pen where a line passes behind the horizon, which is right for a
  * line and wrong for a filled shape: an open path closes itself with a straight chord, so
  * a continent straddling the limb would fill as a lens across the globe.
+ *
+ * It IS used for the one case that cannot be filled at all -- a ring straddling a flat
+ * map's seam, which is outlined instead. That is not an exception to the reasoning above
+ * so much as a consequence of it: where a closed path is guaranteed wrong, a line is the
+ * honest thing to draw, and then tracePolyline is exactly the right tool.
  *
  * Instead, a vertex behind the horizon is CLAMPED onto the limb -- the component of the
  * vertex perpendicular to the view axis, nudged just inside the visible side. The ring
@@ -23,6 +28,7 @@
 
 import { lonLatToVec3 } from './sphere.js';
 import { quatFromPoleAngle, quatSlerp, quatToMat3 } from './rotations.js';
+import { tracePolyline } from './polyline.js';
 
 // How far inside the horizon a clamped vertex is placed. Large enough to survive float
 // noise in the depth test, small enough to be invisible: at a 400 px radius this is well
@@ -157,6 +163,11 @@ export class PolygonLayer {
     if (!this.visible || this.currentTime == null) return;
 
     const axis = projector.axis;
+    // Both optional, and both absent on a camera projector: a flat map has an
+    // edge instead of a horizon. See the seam note in the ring loop below.
+    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
+    const halfWidth = projector.mapHalfWidth ?? 0;
+    let seamRings = null;
     const { fill, stroke, lineWidth, outline } = this.options;
     const time = this.currentTime;
     const v = this._v;
@@ -190,6 +201,7 @@ export class PolygonLayer {
       }
 
       buf.length = 0;
+      let crossesSeam = false;
       // Rings repeat their first vertex, but not every source guarantees it, so close the
       // loop explicitly rather than trusting the data.
       for (let k = 0; k <= ring.count; k++) {
@@ -204,9 +216,32 @@ export class PolygonLayer {
           p = limb && projector.project(limb);
         }
         if (!p) continue;                        // no axis: behaves like a polyline
+        // Spotted from the projected points we already have, not by asking the
+        // projector about every vertex pair -- that would be two extra atan2 per
+        // vertex on a path whose cost is documented below in microseconds.
+        if (halfWidth && buf.length >= 2
+            && Math.abs(p[0] - buf[buf.length - 2]) > halfWidth) crossesSeam = true;
         buf.push(p[0], p[1]);
       }
       if (buf.length < 6) continue;              // fewer than 3 points is not a ring
+
+      /*
+       * A ring straddling a flat map's seam cannot be filled: its vertices are
+       * split between the two edges, so any single closed path through them
+       * sweeps back across the whole map and fills the ocean. Cutting it into
+       * per-side pieces and closing each along the map boundary is a real job
+       * (and a different one from clamping to a limb) that this layer does not
+       * do yet.
+       *
+       * So it is outlined instead -- drawn into a separate stroke-only path,
+       * broken properly at the seam by tracePolyline. Continents that do not
+       * touch the seam are unaffected and still fill. Showing a correct outline
+       * beats both filling it wrongly and dropping it silently.
+       */
+      if (crossesSeam && seam) {
+        (seamRings = seamRings || []).push(ring);
+        continue;
+      }
 
       // Wind every ring the same way. nonzero fill treats opposite windings as holes, so
       // two abutting terranes digitised in opposite senses would punch each other out.
@@ -241,6 +276,19 @@ export class PolygonLayer {
       ctx.strokeStyle = stroke;
       ctx.lineWidth = lineWidth;
       ctx.stroke();
+
+      // The seam-crossing rings, outlined but never filled -- same pen, so they
+      // read as part of the same map rather than a second layer. A fresh path
+      // rather than a Path2D: that is a browser global, and this library is meant
+      // to stay usable headlessly and in a worker (see index.js's own note).
+      if (seamRings) {
+        ctx.beginPath();
+        for (const r of seamRings) {
+          tracePolyline(ctx, (w) => projector.project(w), this.xyz,
+                        r.offset, r.count, { closed: true, seam });
+        }
+        ctx.stroke();
+      }
     }
 
     ctx.restore();

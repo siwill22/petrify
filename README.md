@@ -25,7 +25,8 @@ project(vec3) -> [x, y, depth] | null
 
 `vec3` is a unit vector on the sphere; `x`/`y` are canvas pixels; `depth > 0` means the
 point is on the visible side. `null` means behind the horizon — don't draw. That's the
-entire coupling surface. Supply the bundled `Orthographic`, or your own WebGL globe, or a
+entire coupling surface. Supply a bundled projector — `Orthographic` (a camera on a globe)
+or `Robinson` (a flat whole-world map) — or your own WebGL globe, or a
 D3 projection wrapper.
 
 Nothing assumes your projection preserves orientation. That matters more than it sounds:

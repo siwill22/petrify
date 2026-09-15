@@ -54,6 +54,12 @@ in 3-D unit vectors where the dateline is not special, and splitting would only 
 spurious pen-lifts. Loading these into a 2-D GIS will draw horizontal streaks across any
 feature that crosses the antimeridian.
 
+This stays true of the *data*, and is now handled at *draw* time for projections that
+need it: a flat projector supplies `seamSplit(a, b)` and `tracePolyline` breaks the line
+at its map edge (see `js/robinson.js`). Splitting in the file would still be wrong — where
+the cut belongs depends on the projector's central meridian, which the exporter cannot
+know, and a globe wants no cut at all.
+
 ### Polarity convention
 
 `polarity` follows `gpml:subductionPolarity`: it names the side of the line, **in vertex

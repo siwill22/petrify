@@ -121,6 +121,10 @@ export class BoundaryLayer {
    */
   draw(ctx, projector) {
     const project = (v) => projector.project(v);
+    // Optional part of the contract -- a flat map supplies it, a camera doesn't.
+    // See polyline.js's own comment for why the break has to be driven from the
+    // segment here rather than from inside project().
+    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
     const { style } = this.options;
 
     ctx.save();
@@ -136,7 +140,7 @@ export class BoundaryLayer {
       ctx.beginPath();
       for (const f of this.features) {
         if (f.type === type) {
-          tracePolyline(ctx, project, this.xyz, f.offset, f.count);
+          tracePolyline(ctx, project, this.xyz, f.offset, f.count, { seam });
         }
       }
       ctx.stroke();
@@ -146,7 +150,7 @@ export class BoundaryLayer {
       ctx.fillStyle = style.subduction.stroke;
       for (const f of this.features) {
         if (f.type === 'subduction' && f.side !== 0) {
-          this._drawTriangles(ctx, project, f);
+          this._drawTriangles(ctx, project, f, seam);
         }
       }
     }
@@ -155,7 +159,7 @@ export class BoundaryLayer {
   }
 
   /** Triangles along a trench, every `triangleGap` screen pixels. */
-  _drawTriangles(ctx, project, f) {
+  _drawTriangles(ctx, project, f, seam = null) {
     const { triangleGap, triangleSize, minDecorationDepth } = this.options;
 
     // tracePolyline needs a live path to write into; use a throwaway one so the
@@ -176,6 +180,19 @@ export class BoundaryLayer {
       const pa = pts[i - 1];
       const pb = pts[i];
       if (!pa || !pb) { carry = triangleGap * 0.5; continue; }
+
+      // `pts` holds the real vertices only, unsplit, so a segment spanning the
+      // map's seam still looks like one enormous screen-space step here even
+      // though the stroked line was broken at it. Spacing triangles along that
+      // would strew them right across the map, so skip it -- the same "drop
+      // rather than draw a wrong thing" choice the line itself makes.
+      if (seam) {
+        const is0 = (f.offset + i - 1) * 3;
+        const is1 = (f.offset + i) * 3;
+        a[0] = xyz[is0]; a[1] = xyz[is0 + 1]; a[2] = xyz[is0 + 2];
+        b[0] = xyz[is1]; b[1] = xyz[is1 + 1]; b[2] = xyz[is1 + 2];
+        if (seam(a, b)) { carry = triangleGap * 0.5; continue; }
+      }
 
       const dx = pb[0] - pa[0];
       const dy = pb[1] - pa[1];

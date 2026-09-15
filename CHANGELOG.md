@@ -4,6 +4,44 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.6.0
+
+- **`Robinson`: a second reference projector, and the first one with an edge rather than a
+  horizon.** Two consumers had independently grown their own copy of the same 19-entry
+  Robinson table — Geode for a WebGL plane, StoryMaps for a canvas — and they had drifted
+  into *different behaviour at the antimeridian*, which is the part that actually matters.
+  The table, `robinsonForward`/`robinsonInverse` and `meridianCrossing` are exported
+  separately from the projector class precisely because a consumer with its own renderer
+  (Geode's shader, which genuinely belongs downstream under ADR-0001's rule) wants the
+  arithmetic without the canvas projector, and should read the same numbers rather than a
+  second transcription of them.
+
+- **Lines are now broken at a flat map's seam, via an optional `seamSplit(a, b)` on the
+  projector.** Every layer here was written against a camera, where a point is either
+  visible or behind the horizon. A whole-world flat map is cut open somewhere instead, and
+  a segment spanning that cut is one small step on the sphere but a leap from one side of
+  the canvas to the other — drawn as-is it streaks across the entire map, which reads as a
+  data problem rather than a projection one. `tracePolyline` takes an optional `seam` hook
+  and `BoundaryLayer` passes it through, including for the trench triangles, which would
+  otherwise be strewn along the phantom segment. The crossing is solved on the sphere, not
+  by interpolating longitude: a great circle's longitude is nowhere near linear in its
+  latitude at high latitude, and this library already resolves subduction-triangle sides on
+  the sphere for the same reason.
+
+  **`PolygonLayer` degrades rather than lies.** A ring straddling the seam cannot be
+  filled — its vertices are split between the two map edges, so any closed path through
+  them sweeps back across the map and fills the ocean. Cutting a ring into per-side pieces
+  and closing each along the map boundary is a harder, separate job this does not do yet.
+  Until it does, such a ring is *outlined* — stroked with the same pen, broken properly at
+  the seam — while every ring that does not touch the seam still fills normally. A correct
+  outline beats both filling it wrongly and dropping it silently. Detected from the
+  projected points the layer already computes, via the projector's optional `mapHalfWidth`,
+  so the fast path stays free: the per-ring cost documented in that file is in
+  microseconds, and two extra `atan2` per vertex would not have been.
+
+- Adds `test/`, run with `node --test "test/*.test.mjs"` — Node's built-in runner, so the
+  repo stays dependency-free.
+
 ## v0.5.0
 
 - **`AggregateLayer` + `aggregates.json`: summarised points, one glyph per equal-area

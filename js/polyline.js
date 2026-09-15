@@ -22,13 +22,17 @@
  * @param closed    repeat the first vertex at the end, for rings
  * @param projected optional array to receive the projected points, nulls included, so
  *                  the caller can reuse them without projecting twice
+ * @param seam      optional (a, b) => [leaving, arriving] | null, from a projector whose
+ *                  map has an EDGE rather than a horizon -- see below
  * @returns the number of points actually drawn
  */
 export function tracePolyline(path, project, xyz, offset, count,
-                              { closed = false, projected = null } = {}) {
+                              { closed = false, projected = null, seam = null } = {}) {
   if (projected) projected.length = 0;
 
   const v = [0, 0, 0];
+  const prev = [0, 0, 0];
+  let havePrev = false;
   let pen = false;
   let drawn = 0;
 
@@ -37,8 +41,37 @@ export function tracePolyline(path, project, xyz, offset, count,
     const i = (offset + (k % count)) * 3;
     v[0] = xyz[i]; v[1] = xyz[i + 1]; v[2] = xyz[i + 2];
 
+    /*
+     * A whole-world flat map is cut open somewhere, and a segment spanning that
+     * cut is a single step on the sphere but a leap from one side of the canvas
+     * to the other. Drawn as-is it streaks across the entire map.
+     *
+     * The projector, which is the only thing that knows where its own cut is,
+     * hands back the two points to break at: run the pen out to the edge it was
+     * heading for, lift, and resume from the matching point on the opposite
+     * edge. Both are the same place on the sphere.
+     *
+     * Note this is driven from the SEGMENT, not from a vertex -- which is why it
+     * cannot live inside project(). A projector sees one vertex at a time and
+     * has no way to tell "the line just wrapped" from "a new feature started
+     * somewhere else"; only the caller walking a run knows that, and it is the
+     * caller that has the previous vertex to hand.
+     */
+    if (seam && havePrev && pen) {
+      const cut = seam(prev, v);
+      if (cut) {
+        const out = project(cut[0]);
+        if (out) { path.lineTo(out[0], out[1]); drawn++; }
+        const back = project(cut[1]);
+        if (back) { path.moveTo(back[0], back[1]); pen = true; drawn++; } else { pen = false; }
+        // The real vertex still gets drawn below, continuing from the far edge.
+      }
+    }
+
     const p = project(v);
     if (projected) projected.push(p);
+    prev[0] = v[0]; prev[1] = v[1]; prev[2] = v[2];
+    havePrev = true;
 
     if (!p) { pen = false; continue; }
     if (pen) path.lineTo(p[0], p[1]);

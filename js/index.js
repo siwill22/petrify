@@ -22,6 +22,10 @@ export {
   TimeSeriesSet, parseCsv, seriesFromCsv, timeColumn, MODES,
 } from './timeseries.js';
 export { Orthographic } from './orthographic.js';
+export {
+  Robinson, robinsonForward, robinsonInverse, meridianCrossing, wrapLonDelta,
+  ROBINSON_X, ROBINSON_Y, ROBINSON_KX, ROBINSON_KY, ROBINSON_STEP,
+} from './robinson.js';
 export { tracePolyline, packLonLat } from './polyline.js';
 export {
   quatFromPoleAngle, quatSlerp, quatToMat3, mat3Multiply, mat3Apply,
