@@ -14,17 +14,27 @@
 /**
  * Add one polyline to `path`.
  *
- * @param path      anything with moveTo/lineTo: a CanvasRenderingContext2D or a Path2D
- * @param project   (vec3) => [x, y, depth] | null
- * @param xyz       flat Float64Array of unit vectors
- * @param offset    index of the first vertex (in vertices, not floats)
- * @param count     number of vertices
- * @param closed    repeat the first vertex at the end, for rings
- * @param projected optional array to receive the projected points, nulls included, so
- *                  the caller can reuse them without projecting twice
- * @param seam      optional (a, b) => [leaving, arriving] | null, from a projector whose
- *                  map has an EDGE rather than a horizon -- see below
- * @returns the number of points actually drawn
+ * The options object carries `closed` (repeat the first vertex, for rings),
+ * `projected` (an array to receive the projected points, nulls included, so the
+ * caller can reuse them without projecting twice) and `seam` (from a projector
+ * whose map has an EDGE rather than a horizon -- see below).
+ *
+ * Every parameter is typed explicitly because this repo ships no .d.ts:
+ * TypeScript consumers get their types by inference from this source, and an
+ * inferred `seam = null` default narrows to exactly `null`, which rejects the
+ * very function the parameter exists to take.
+ *
+ * @param {{moveTo: Function, lineTo: Function}} path a CanvasRenderingContext2D or Path2D
+ * @param {(v: ArrayLike<number>) => (number[]|null)} project
+ * @param {ArrayLike<number>} xyz flat array of unit vectors
+ * @param {number} offset index of the first vertex (in vertices, not floats)
+ * @param {number} count number of vertices
+ * @param {{
+ *   closed?: boolean,
+ *   projected?: ((number[]|null)[])|null,
+ *   seam?: ((a: ArrayLike<number>, b: ArrayLike<number>) => (number[][]|null))|null,
+ * }} [options]
+ * @returns {number} the number of points actually drawn
  */
 export function tracePolyline(path, project, xyz, offset, count,
                               { closed = false, projected = null, seam = null } = {}) {

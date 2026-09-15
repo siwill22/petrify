@@ -178,8 +178,19 @@ export class PolygonLayer {
    *
    * The arrays are freshly allocated per call, unlike draw()'s single reused
    * buffer, because the caller keeps them.
+   *
+   * Typed explicitly because this repo ships no .d.ts and TypeScript consumers
+   * infer from this source: `{ fillable: [], seam: [] }` would otherwise infer
+   * as `never[]` and reject every use.
+   *
+   * @returns {{
+   *   fillable: number[][],
+   *   seam: {plate: string, begin: number, end: number, name: string,
+   *          offset: number, count: number}[],
+   * }}
    */
   projectRings(projector) {
+    /** @type {{fillable: number[][], seam: any[]}} */
     const out = { fillable: [], seam: [] };
     if (!this.visible || this.currentTime == null) return out;
 

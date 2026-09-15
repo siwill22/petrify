@@ -4,6 +4,15 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.7.1
+
+- **Typed the JSDoc on `projectRings` and `tracePolyline`.** This repo ships no `.d.ts`;
+  TypeScript consumers get their types by inference from the source. That made two of the
+  newest signatures unusable from TS: `{ fillable: [], seam: [] }` infers as `never[]`, and
+  `tracePolyline`'s `seam = null` default narrows to exactly `null` — rejecting the very
+  function the parameter exists to accept. No behaviour change; the tests are unchanged and
+  still pass.
+
 ## v0.7.0
 
 - **`PolygonLayer.projectRings(projector)`: where the continents land, without drawing
