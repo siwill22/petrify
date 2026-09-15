@@ -4,6 +4,26 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.7.0
+
+- **`PolygonLayer.projectRings(projector)`: where the continents land, without drawing
+  them.** Returns `{ fillable, seam }` — flat `[x, y, …]` arrays that are already
+  limb-clamped, consistently wound and closed, plus the rings that straddle a flat map's
+  seam and may therefore only be stroked. `draw()` is now written in terms of it, so there
+  is one tracing loop rather than two that can drift.
+
+  The consumer that forced this is Geode's Old Map viewer, which builds a graded coastal
+  wash by stroking the coastline repeatedly at growing widths, and clips it to the land
+  side. That needs the *path*, not a finished drawing, and there is no way to recover one
+  from `draw()` — a recording shim around the context cannot tell the fillable rings from
+  the seam-diverted ones, which is exactly the distinction that matters. Reproducing the
+  loop downstream would have meant copying the limb clamping, the winding fix and the seam
+  test: the three parts of this layer that are actually difficult, and the three most
+  likely to drift out of sync. Per ADR-0001 they stay here.
+
+  Buffers are allocated per call rather than reusing `draw()`'s single scratch array, since
+  the caller keeps them.
+
 ## v0.6.0
 
 - **`Robinson`: a second reference projector, and the first one with an edge rather than a

@@ -219,6 +219,66 @@ test('PolygonLayer: outlines a seam-crossing ring, still fills the others', () =
   assert.equal(ops2.filter((o) => o[0] === 'stroke').length, 1, 'no second stroke');
 });
 
+test('PolygonLayer.projectRings: same rings draw() would fill, without drawing', () => {
+  const ring = (lon0, lat0) => {
+    const pts = [];
+    for (const [dx, dy] of [[0, 0], [10, 0], [10, 10], [0, 10]]) pts.push(lon0 + dx, lat0 + dy);
+    return pts;
+  };
+  const data = {
+    times: [0, 100],
+    rotations: { 1: [[0, 0, 0], [0, 0, 0]] },
+    features: [
+      { p: 1, b: 100, e: 0, xy: ring(20, 0) },     // mid-map
+      { p: 1, b: 100, e: 0, xy: ring(175, 0) },    // crosses 180
+    ],
+  };
+  const layer = new PolygonLayer(data, { fill: '#fff', stroke: '#000' });
+  layer.setTime(0);
+  const p = new Robinson({ cx: 0, cy: 0, radius: 100, lon: 0 });
+
+  const { fillable, seam } = layer.projectRings(p);
+  assert.equal(fillable.length, 1, 'the mid-map ring is fillable');
+  assert.equal(seam.length, 1, 'the seam-crossing ring is diverted, not fillable');
+
+  // Closed: the first vertex is repeated at the end, so a consumer can fill
+  // without closePath (see draw()'s note on why that matters).
+  const buf = fillable[0];
+  assert.equal(buf[0], buf[buf.length - 2], 'ring closes in x');
+  assert.equal(buf[1], buf[buf.length - 1], 'ring closes in y');
+
+  // Consistently wound, which is what makes a nonzero fill a union.
+  let area = 0;
+  for (let i = 0, n = buf.length; i < n; i += 2) {
+    const j = (i + 2) % n;
+    area += buf[i] * buf[j + 1] - buf[j] * buf[i + 1];
+  }
+  assert.ok(area > 0, 'wound positive');
+
+  // The whole point: these are the SAME coordinates draw() would have emitted.
+  const ops = [];
+  const ctx = {
+    save() {}, restore() {}, beginPath() {},
+    moveTo(x, y) { ops.push(x, y); }, lineTo(x, y) { ops.push(x, y); },
+    fill() {}, stroke() {},
+    set fillStyle(_) {}, set strokeStyle(_) {}, set lineWidth(_) {},
+    set lineJoin(_) {}, set lineCap(_) {},
+  };
+  layer.draw(ctx, p);
+  assert.deepEqual(ops.slice(0, buf.length), buf,
+    'projectRings and draw disagree about where the ring is');
+
+  // A projector with no seam concept diverts nothing.
+  const flat = layer.projectRings({ project: (v) => [v[0] * 100, v[1] * 100, 1] });
+  assert.equal(flat.seam.length, 0, 'no seam projector, no diverted rings');
+  assert.equal(flat.fillable.length, 2, 'both rings fillable');
+
+  // Buffers are per-call, not a shared scratch one -- the caller keeps them.
+  const again = layer.projectRings(p);
+  assert.notEqual(again.fillable[0], fillable[0], 'a fresh array per call');
+  assert.deepEqual(again.fillable[0], fillable[0], 'with identical contents');
+});
+
 test('wrapLonDelta', () => {
   assert.equal(wrapLonDelta(0), 0);
   assert.equal(wrapLonDelta(180), 180);

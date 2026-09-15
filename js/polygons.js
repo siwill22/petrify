@@ -159,28 +159,38 @@ export class PolygonLayer {
     return n;
   }
 
-  draw(ctx, projector) {
-    if (!this.visible || this.currentTime == null) return;
+  /**
+   * Project every live ring onto `projector`, without drawing anything.
+   *
+   * Returns `{ fillable, seam }`. `fillable` holds flat [x, y, x, y, ...] arrays,
+   * consistently wound and with the first vertex repeated at the end, each safe
+   * to close and fill. `seam` holds the ring records that straddle a flat map's
+   * seam and therefore may only be STROKED -- see the long note below; pass each
+   * to `tracePolyline` with the projector's own `seamSplit`.
+   *
+   * This exists because "where do these continents land on screen" and "paint
+   * them like so" are separable, and a consumer can want the first without the
+   * second: Geode's Old Map viewer strokes the coastline repeatedly at growing
+   * widths to build a graded wash, and to do that it needs the path rather than
+   * a finished drawing. Reproducing this loop there would have meant copying the
+   * limb clamping, the winding fix and the seam test -- the three parts of this
+   * layer that are actually difficult.
+   *
+   * The arrays are freshly allocated per call, unlike draw()'s single reused
+   * buffer, because the caller keeps them.
+   */
+  projectRings(projector) {
+    const out = { fillable: [], seam: [] };
+    if (!this.visible || this.currentTime == null) return out;
 
     const axis = projector.axis;
     // Both optional, and both absent on a camera projector: a flat map has an
     // edge instead of a horizon. See the seam note in the ring loop below.
-    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
+    const hasSeamSplit = !!projector.seamSplit;
     const halfWidth = projector.mapHalfWidth ?? 0;
-    let seamRings = null;
-    const { fill, stroke, lineWidth, outline } = this.options;
     const time = this.currentTime;
     const v = this._v;
     const c = this._c;
-
-    ctx.save();
-    ctx.lineJoin = 'round';
-    // Round caps, because the rings below are left OPEN -- see the note on closePath. The
-    // seam is two coincident endpoints, and a round cap makes it read as a join.
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-
-    const buf = this._buf || (this._buf = []);
 
     for (const ring of this.rings) {
       if (!this.isLive(ring, time)) continue;
@@ -200,7 +210,7 @@ export class PolygonLayer {
         if (!anyVisible) continue;
       }
 
-      buf.length = 0;
+      const buf = [];
       let crossesSeam = false;
       // Rings repeat their first vertex, but not every source guarantees it, so close the
       // loop explicitly rather than trusting the data.
@@ -238,8 +248,8 @@ export class PolygonLayer {
        * touch the seam are unaffected and still fill. Showing a correct outline
        * beats both filling it wrongly and dropping it silently.
        */
-      if (crossesSeam && seam) {
-        (seamRings = seamRings || []).push(ring);
+      if (crossesSeam && hasSeamSplit) {
+        out.seam.push(ring);
         continue;
       }
 
@@ -247,7 +257,26 @@ export class PolygonLayer {
       // two abutting terranes digitised in opposite senses would punch each other out.
       // Consistent winding makes nonzero a union, which is what "land" means here.
       if (signedArea(buf) < 0) reverseRing(buf);
+      out.fillable.push(buf);
+    }
+    return out;
+  }
 
+  draw(ctx, projector) {
+    if (!this.visible || this.currentTime == null) return;
+
+    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
+    const { fill, stroke, lineWidth, outline } = this.options;
+    const { fillable, seam: seamRings } = this.projectRings(projector);
+
+    ctx.save();
+    ctx.lineJoin = 'round';
+    // Round caps, because the rings below are left OPEN -- see the note on closePath. The
+    // seam is two coincident endpoints, and a round cap makes it read as a join.
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+
+    for (const buf of fillable) {
       ctx.moveTo(buf[0], buf[1]);
       for (let i = 2; i < buf.length; i += 2) ctx.lineTo(buf[i], buf[i + 1]);
 
@@ -281,7 +310,10 @@ export class PolygonLayer {
       // read as part of the same map rather than a second layer. A fresh path
       // rather than a Path2D: that is a browser global, and this library is meant
       // to stay usable headlessly and in a worker (see index.js's own note).
-      if (seamRings) {
+      // `.length`, not truthiness: projectRings() always returns an array, and an
+      // empty one is truthy -- which would open a second, empty path on every
+      // projector that has no seam at all.
+      if (seamRings.length) {
         ctx.beginPath();
         for (const r of seamRings) {
           tracePolyline(ctx, (w) => projector.project(w), this.xyz,
