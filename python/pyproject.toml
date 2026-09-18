@@ -3,8 +3,8 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "deep-time-map"
-version = "0.9.1"
+name = "petrify"
+version = "0.10.0"
 description = "Export plate reconstructions as web-ready JSON for deep-time maps"
 readme = "../README.md"
 requires-python = ">=3.9"
@@ -20,9 +20,9 @@ dependencies = [
 verify = ["pygmt"]
 
 [project.scripts]
-deep-time-map-export = "deep_time_map.export:main"
-deep-time-map-verify = "deep_time_map.verify:main"
-deep-time-map-timeseries = "deep_time_map.timeseries:main"
+petrify-export = "petrify.export:main"
+petrify-verify = "petrify.verify:main"
+petrify-timeseries = "petrify.timeseries:main"
 
 [tool.setuptools.packages.find]
-include = ["deep_time_map*", "geode*"]
+include = ["petrify*", "geode*"]

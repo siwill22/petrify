@@ -13,18 +13,18 @@ import sys
 from .cache import Cache, key_for
 
 
-def _dtm():
-    """Import deep_time_map, adding the sibling package directory if need be.
+def _petrify():
+    """Import petrify, adding the sibling package directory if need be.
 
-    `geode` ships beside `deep_time_map` in the same repository, so a user who put
+    `geode` ships beside `petrify` in the same repository, so a user who put
     the repo on their path once should not have to do it again per package.
     """
     try:
-        import deep_time_map
+        import petrify
     except ImportError:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import deep_time_map
-    return deep_time_map
+        import petrify
+    return petrify
 
 
 class Builder:
@@ -50,7 +50,7 @@ class Builder:
         """
         if self._model is None:
             self.log("loading {}".format(self.view.reconstruction))
-            self._model = _dtm().load_model(self.view.reconstruction)
+            self._model = _petrify().load_model(self.view.reconstruction)
         return self._model
 
     def _base(self):
@@ -79,7 +79,7 @@ class Builder:
             (self.view.end - self.view.start) // self.view.step + 1,
             self.view.start, self.view.end))
         out = self.cache.begin(key)
-        _dtm().export_series(
+        _petrify().export_series(
             model_name=self.view.reconstruction,
             start=self.view.start, end=self.view.end, step=self.view.step,
             tessellate=tessellate, healpix_n=healpix_n, delta_time=delta_time,
@@ -99,7 +99,7 @@ class Builder:
 
         self.log("  {}: building".format(which))
         out = self.cache.begin(key)
-        _dtm().export_polygons(
+        _petrify().export_polygons(
             model_name=self.view.reconstruction, model=self.model,
             start=self.view.start, end=self.view.end, step=self.view.step,
             which=which, tolerance=tolerance, out_dir=out, quiet=self.quiet)
@@ -128,7 +128,7 @@ class Builder:
 
         self.log("  points: assigning plates to {} rows".format(len(frame)))
         out = self.cache.begin(key)
-        _dtm().export_points(
+        _petrify().export_points(
             frame, model_name=self.view.reconstruction, model=self.model,
             start=self.view.start, end=self.view.end, step=self.view.step,
             # `rotations` ships present-day geometry plus a rotation series per
@@ -157,7 +157,7 @@ class Builder:
         path = os.path.join(data_dir, "boundary_length.csv")
         if not os.path.exists(path):
             self.log("  boundary_length: measuring frames")
-            _dtm().boundary_length_series(data_dir)
+            _petrify().boundary_length_series(data_dir)
         return path
 
 

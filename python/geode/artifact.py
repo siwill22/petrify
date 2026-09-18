@@ -65,7 +65,7 @@ loads its data with `fetch`, which browsers block for local files.)
     index.html    the page
     view.json     the recipe: every display decision, as data
     data/         the exported reconstruction
-    lib/          deep-time-map, vendored
+    lib/          petrify, vendored
     provenance/   the View Script, and whatever else was bundled
 
 `view.json` is the interesting file. Change a colour in it and reload -- no

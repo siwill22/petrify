@@ -148,7 +148,7 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="deep-time-map-timeseries",
+        prog="petrify-timeseries",
         description="Total boundary length by type, through an exported frame series.")
     p.add_argument("--data", default="data", help="directory holding the export")
     p.add_argument("--out", default=None,

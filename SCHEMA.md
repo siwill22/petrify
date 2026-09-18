@@ -429,7 +429,7 @@ outlines.
 
 ## `boundary_length.csv` — a derived time series, optional
 
-Not written by `export`. `python -m deep_time_map.timeseries --data data` reads an
+Not written by `export`. `python -m petrify.timeseries --data data` reads an
 already-exported `frames/boundaries_<NNN>Ma.geojson` series and writes total arc
 length in km, grouped by `boundary_type`, per frame:
 
@@ -453,7 +453,7 @@ time_ma,subduction_km,ridge_km,transform_km,other_km,total_km
   function, so a consumer measuring something else (e.g. subduction length matched
   against a separate point dataset) gets the same frame-reading and arc-length
   machinery via its own grouping function, and writes its own CSV with `write_csv()`.
-  See `python/deep_time_map/timeseries.py`'s own docstring, and docs/adr/0001 for why
+  See `python/petrify/timeseries.py`'s own docstring, and docs/adr/0001 for why
   that split — generic arc-length/grouping mechanics here, "what counts as a group"
   left to the caller — is deliberate.
 

@@ -241,7 +241,7 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="deep-time-map-export",
+        prog="petrify-export",
         description="Export plate boundaries and velocities as web-ready JSON.")
     p.add_argument("--model", default="Merdith2021",
                    help="gprm reconstruction model name (default: Merdith2021)")

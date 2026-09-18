@@ -1,14 +1,14 @@
 """
-deep-time-map: export plate reconstructions as web-ready JSON.
+petrify: export plate reconstructions as web-ready JSON.
 
-    from deep_time_map import export_series
+    from petrify import export_series
     export_series(model_name="Merdith2021", start=0, end=250, out_dir="data")
 
 or from the command line:
 
-    python -m deep_time_map.export --model Merdith2021 --end 250 --out data
-    python -m deep_time_map.verify --data data --time 100
-    python -m deep_time_map.timeseries --data data
+    python -m petrify.export --model Merdith2021 --end 250 --out data
+    python -m petrify.verify --data data --time 100
+    python -m petrify.timeseries --data data
 """
 
 from .aggregate import (

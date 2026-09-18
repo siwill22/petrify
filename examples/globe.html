@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>deep-time-map — standalone example</title>
+<title>petrify — standalone example</title>
 <style>
   :root { color-scheme: dark; }
   body {
@@ -44,7 +44,7 @@
 <canvas id="c"></canvas>
 
 <div class="panel">
-  <h1>deep-time-map</h1>
+  <h1>petrify</h1>
   <p>Standalone — no host renderer, just <code>Orthographic</code>.<br>Drag to rotate.</p>
   <label><span id="t">100</span> Ma <input id="time" type="range" min="0" max="250" value="100"></label>
   <p class="err" id="err"></p>
@@ -173,7 +173,7 @@ async function main() {
 main().catch((e) => {
   errEl.innerHTML = 'Could not load: ' + e.message +
     '<br><br>Export some data first:<br>' +
-    '<code>python -m deep_time_map.export --out examples/data</code>';
+    '<code>python -m petrify.export --out examples/data</code>';
   console.error(e);
 });
 </script>

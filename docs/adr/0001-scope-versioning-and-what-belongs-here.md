@@ -1,6 +1,6 @@
-# What belongs in deep-time-map, and how consumers depend on it
+# What belongs in petrify, and how consumers depend on it
 
-deep-time-map was extracted from a StoryMaps prototype (`88c29c6`) and has
+petrify was extracted from a StoryMaps prototype (`88c29c6`) and has
 since been vendored by at least three consumers: Geode's mantle/paleoclimate
 viewers (`viewer/src/core/boundaries.ts`, wrapping a three.js camera in the
 library's own projector contract), the StoryMaps `plate-boundaries`
@@ -30,7 +30,7 @@ session can actually find.
 
 ## The rule: what belongs upstream here
 
-A capability belongs in deep-time-map, not in a consumer, if it satisfies
+A capability belongs in petrify, not in a consumer, if it satisfies
 **either**:
 
 1. **It's expressible purely in sphere geometry plus the host contract** —
@@ -64,8 +64,8 @@ boundary segments matching some filter, a click-to-chart interaction).
 **Split these rather than declaring the whole feature upstream or
 downstream**: the generic half becomes a primitive here; the domain-specific
 half stays in the consumer as an adapter that produces the same plain JSON
-shape deep-time-map already knows how to render (a `points.json`,
-a `boundaries.json` frame) — the same pattern `python/deep_time_map/export.py`
+shape petrify already knows how to render (a `points.json`,
+a `boundaries.json` frame) — the same pattern `python/petrify/export.py`
 already uses. Nothing in `js/` has ever needed to know what a "deposit" or
 a "species" is, and that should stay true.
 
@@ -78,7 +78,7 @@ of where development began, not because StoryMaps is entitled to hold
 generic logic. When something there is recognized as satisfying the rule
 above — as `build_timeseries.py`'s core arc-length computation now is,
 being the generic half of the planned zircon-evidence feature — it moves
-into `python/deep_time_map/` on the same terms as anything else. StoryMaps
+into `python/petrify/` on the same terms as anything else. StoryMaps
 is a consumer like Geode or any future one, not "core."
 
 ## Versioning and how consumers depend on this repo
@@ -98,12 +98,12 @@ answer to "what version is this, and is it behind."
   PolygonLayer" is not enough for an agent with no other context to decide
   whether an update matters to it.
 - **Submodule consumers pin to tags, never to a branch tip.** `git -C
-  vendor/deep-time-map describe --tags` should always answer cleanly. This
+  vendor/petrify describe --tags` should always answer cleanly. This
   is what would have kept `points-and-spiderfy` from being vendored
   mid-flight — there would have been nothing tagged to point at until it
   was actually done.
 - **Copy-vendored consumers (the generator's output) get the version
-  stamped into the copy itself** — e.g. a `/* vendored from deep-time-map
+  stamped into the copy itself** — e.g. a `/* vendored from petrify
   vX.Y.Z */` comment at the top of the copied `index.js` — since a git-less
   copy has no other way to answer "what version is this" a year later.
 
@@ -122,7 +122,7 @@ this repo should reach for it until it lands on `main` and gets a tag.
 - A consumer (this repo's own agent sessions included) never depends on an
   unmerged branch. If the capability isn't tagged, it isn't available yet.
 - `build_timeseries.py`'s generic arc-length-by-type logic should migrate
-  from StoryMaps into `python/deep_time_map/` — flagged here as a known
+  from StoryMaps into `python/petrify/` — flagged here as a known
   follow-up, not yet done.
 - Geode carries a short pointer ADR (`docs/adr/0028` there) referencing
   this file, plus the Geode-specific consequence: check this rule before

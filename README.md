@@ -1,4 +1,4 @@
-# deep-time-map
+# petrify
 
 Render plate reconstructions in the browser: reconstructed continent polygons, boundary
 lines with subduction-polarity triangles, plate velocity arrows, symbolised point datasets
@@ -37,7 +37,7 @@ see "Why the triangles are hard" below.
 ```sh
 # export data (needs the pygplates/gprm stack; conda env assumed to be `pygmt17`)
 export PYTHONPATH="$PYTHONPATH:$PWD/python"
-python -m deep_time_map.export --model Merdith2021 --end 250 --out examples/data
+python -m petrify.export --model Merdith2021 --end 250 --out examples/data
 
 # serve and look at it
 python -m http.server 8000
@@ -259,8 +259,8 @@ widths.**
 ## Python API
 
 ```sh
-python -m deep_time_map.export --help
-python -m deep_time_map.verify --data data --time 100
+python -m petrify.export --help
+python -m petrify.verify --data data --time 100
 ```
 
 `--model` takes any name `gprm.datasets.Reconstructions` can fetch — `Merdith2021`
@@ -274,7 +274,7 @@ Point datasets ride along with `--points`, which takes any CSV with `Longitude`,
 by partitioning against the model's static polygons, so the input needs none:
 
 ```sh
-python -m deep_time_map.export --points deposits.csv --transport both \
+python -m petrify.export --points deposits.csv --transport both \
   --point-fields "name=Deposit,country=Country,cu_mt=Cu (Mt)" --out data
 ```
 
@@ -282,7 +282,7 @@ Continent polygons come from `--polygons continents` (or `coastlines`, or `stati
 models differ in which they carry, and Merdith2021 has continents but no coastlines):
 
 ```sh
-python -m deep_time_map.export --polygons continents --tolerance 0.02 --out data
+python -m petrify.export --polygons continents --tolerance 0.02 --out data
 ```
 
 `--tolerance` is the furthest a vertex may move, in degrees of arc. Simplification is
@@ -300,7 +300,7 @@ rounding floor.
 Or as a library:
 
 ```python
-from deep_time_map import export_series, export_points, verify
+from petrify import export_series, export_points, verify
 export_series(model_name="Merdith2021", start=0, end=250, out_dir="data")
 export_points(gdf, model_name="Merdith2021", transport="rotations", out_dir="data")
 verify(data_dir="data", time=100)
@@ -327,7 +327,7 @@ product of unit vectors, independent of any projection. That direction is then p
 and the screen normal read off the result. One extra projection per triangle; correct
 under any projector, including ones that mirror.
 
-`deep_time_map.verify` checks this against the resolved plate polygons by stepping onto
+`petrify.verify` checks this against the resolved plate polygons by stepping onto
 the polarity side and asking which plate the probe lands in. It has been run against two
 independent models: Merdith2021 (41 agree / 0 disagree / 8 indeterminate at 100 Ma) and
 Muller2019 (46 / 0 / 7). The indeterminate cases are triple junctions and segments shared
@@ -368,7 +368,7 @@ js/
   polyline.js      projection + horizon-cull loop
   rotations.js     quaternions: finite rotations and slerp
   sphere.js        spherical geometry
-python/deep_time_map/
+python/petrify/
   boundaries.py    resolve topologies -> GeoJSON
   velocities.py    HEALPix velocity field
   polygons.py      present-day rings + per-plate rotation series

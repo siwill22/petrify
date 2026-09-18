@@ -237,7 +237,7 @@ def main(argv=None):
     import argparse
 
     p = argparse.ArgumentParser(
-        prog="deep-time-map-verify",
+        prog="petrify-verify",
         description="Check exported boundaries and velocities against pygplates.")
     p.add_argument("--data", default="data", help="directory holding the export")
     p.add_argument("--model", default="Merdith2021")

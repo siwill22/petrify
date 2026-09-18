@@ -4,6 +4,24 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.10.0
+
+Renamed from `deep-time-map` to `petrify`, and the repository made public.
+
+The old name described what the library draws (a map of deep time); the new
+one describes what it draws it *of* — the rock surface, imaged from outside,
+with no claim on anything beneath it. That distinction matters now that the
+Geode monorepo pulls this in as a sibling: Geode looks into the Earth, this
+library only ever renders its outer shell.
+
+- **Python package renamed `deep_time_map` → `petrify`.** Console scripts
+  follow: `petrify-export`, `petrify-verify`, `petrify-timeseries`.
+- **No behaviour changed.** Every consumer needs its import paths and vendored
+  copies updated, not its code re-tested.
+- GitHub renames redirect the old URL automatically, but pinned submodules and
+  hand-vendored copies do not update themselves — see the repos that vendor
+  this one for their own follow-up.
+
 ## v0.9.1
 
 v0.9.0 shipped the provenance drawer but buried it: "How this was made" sat as a
@@ -80,7 +98,7 @@ and a hand-written page to use any of it.
 - **Added `python/geode/`: the notebook API.** Nine verbs (`globe`, `continents`,
   `boundaries`, `velocities`, `points`, `timeseries`, `theme`, `caption`, `export`)
   that turn a DataFrame into a standalone offline viewer. It sits on
-  `deep_time_map`'s exporters rather than replacing them.
+  `petrify`'s exporters rather than replacing them.
 
   What it does not do is reduce anyone's Python. Measured on the case study: of the
   341 lines in that page's build scripts, this removes about 35 — the `sys.path`
@@ -218,7 +236,7 @@ and a hand-written page to use any of it.
   rigid point does — contents change by membership, not motion — so it cuts hard like
   `BoundarySeries`); and it does not know what the categories mean, per ADR-0001.
 
-- **`deep_time_map.aggregate`: `EqualAreaGrid`, `build_aggregates`, `build_latitude`.**
+- **`petrify.aggregate`: `EqualAreaGrid`, `build_aggregates`, `build_latitude`.**
   The grid is exactly equal-area by construction — rings of equal area (equal steps in
   sin φ), each cut into the same number of longitude divisions, so every cell is exactly
   `4π / (rings × lon_cells)` steradians. `verify_equal_area()` checks it by Monte Carlo
@@ -329,7 +347,7 @@ and a hand-written page to use any of it.
 
 ## v0.2.0
 
-- **`deep_time_map.timeseries`** — arc length of boundary segments, grouped
+- **`petrify.timeseries`** — arc length of boundary segments, grouped
   through time, migrated from StoryMaps' `build_timeseries.py` (see
   `docs/adr/0001`: it satisfies the scope rule as much as anything else
   here, and was only ever in StoryMaps by accident of where development
