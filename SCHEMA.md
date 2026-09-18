@@ -571,19 +571,40 @@ for the measurement.
 ### `provenance`
 
 ```json
-{ "label": "How this was made",
+{ "label": "View the code",
   "files": [{ "title": "View Script", "url": "provenance/view_script.py",
               "note": "Generated from the calls this view actually received." }],
+  "requirements": ["conda create -n pygmt17 ... (see README)",
+                   "pip install -e path/to/deep-time-map/python",
+                   "gprm and pygplates, from the GPlates/conda-forge stack",
+                   "first export run: ~20 min (reconstructs every boundary frame); after that, cached -- seconds"],
   "libraries": [{ "call": "Zircons.get_mafic_felsic_samples(rock_type=…)",
                   "package": "gprm.datasets", "version": null,
                   "citation": "Puetz, S.J. et al. (2026), …" }] }
 ```
 
-`files` are fetched and shown verbatim. `libraries` are **named and pinned, not
-shown** — they run outside the browser and cannot be pasted into a panel. The drawer
-says so rather than omitting them silently, because a panel claiming to show "the
-code" while quietly leaving out the package that did the science implies an audit
-trail it does not have.
+The drawer shows three tiers, because "the code" means three different things with
+three different costs:
+
+1. **`view.json` itself** — always offered, unconditionally, not part of this block
+   at all: it sits beside `index.html` by construction (every Explorer this host
+   mounts has one), so the drawer always opens with "download this and edit it,
+   no Python needed" before showing anything else.
+2. **The View Script** (`files`) — generated, canonical, provably what produced the
+   view. Fetched and shown verbatim, with a download link. It closes over data (a
+   DataFrame, say) that exists only in the notebook that made it, so it is for
+   *reading*, not running.
+3. **The author's notebook and `requirements`** — the one tier that actually
+   reproduces the analysis, and the one with a real setup cost. `requirements` is
+   optional, author-supplied plain-language steps (`python/geode`'s
+   `view.notebook(path, requirements=[...])`); the host does not guess at what a
+   given analysis needs, so this section is simply absent if the author supplied
+   nothing.
+
+`libraries` are **named and pinned, not shown** — they run outside the browser and
+cannot be pasted into a panel. The drawer says so rather than omitting them
+silently, because a panel claiming to show "the code" while quietly leaving out the
+package that did the science implies an audit trail it does not have.
 
 ## Sizes, for planning
 

@@ -390,6 +390,11 @@ export async function mountExplorer(recipe, root) {
 
   const legendBody = panelSection(dom.legend, recipe.legendTitle ?? 'Legend');
 
+  // First in the panel, not last: a reader who never scrolls the legend should still
+  // see this. It used to sit after the credits, below everything else, which is
+  // exactly why it went unnoticed.
+  if (recipe.provenance) legendBody.append(buildProvenance(recipe.provenance, root));
+
   if (series && boundarySpec.legend !== false) {
     legendBody.append(buildBoundaryLegend(series, theme, scheduleRender));
   }
@@ -424,8 +429,6 @@ export async function mountExplorer(recipe, root) {
   if (creditBits.length) {
     legendBody.append(el('p', 'dtm-credit', creditBits.join('<br>')));
   }
-
-  if (recipe.provenance) legendBody.append(buildProvenance(recipe.provenance, root));
 
   /* ---- time bar ------------------------------------------------------------ */
 
@@ -820,24 +823,35 @@ function buildVelocityRow(velocities, spec, globe, theme, render) {
 /**
  * The drawer that connects the picture back to the science.
  *
- * Two clearly separated things, because conflating them would imply an audit trail
- * the page does not have:
+ * Three tiers, because "the code" means three different things with three
+ * different costs, and a curious reader deserves to know which one they are
+ * looking at before they invest in it:
  *
- *   the View Script -- generated, canonical, provably what produced this view;
- *   the author's own notebook -- optional, carrying the wrangling and their prose.
+ *   1. this view.json -- a plain data file. Download it, edit a colour or a
+ *      hover field, reload. No Python, no install, nothing to set up.
+ *   2. the View Script -- generated, canonical, provably what produced this
+ *      view. For READING and checking against what is on screen -- it closes
+ *      over data (a DataFrame, say) that only exists in the author's own
+ *      session, so it does not run standalone.
+ *   3. the author's own notebook, if bundled -- the thing that actually
+ *      reproduces the analysis, and the one tier with a real setup cost
+ *      (`prov.requirements`, when the author supplied any).
  *
- * And a third thing stated rather than shown: the analysis libraries. A panel
+ * And a fourth thing stated rather than shown: the analysis libraries. A panel
  * claiming to show "the code" while silently omitting the package that did the
  * science would be worse than one that names and pins it.
  */
 function buildProvenance(prov, root) {
-  const btn = el('button', 'dtm-prov-open', prov.label ?? 'How this was made');
+  const btn = el('button', 'dtm-prov-open', prov.label ?? 'View the code');
   const drawer = el('div', 'dtm-prov');
   const close = el('button', 'dtm-prov-close', '×');
   close.setAttribute('aria-label', 'Close');
   const body = el('div', 'dtm-prov-body', '<p class="dtm-prov-loading">Loading…</p>');
   drawer.append(close, body);
   root.append(drawer);
+
+  const download = (url, label) => `<a class="dtm-prov-download" href="${escapeHtml(url)}" `
+    + `download>${escapeHtml(label ?? 'Download')}</a>`;
 
   let loaded = false;
   btn.addEventListener('click', async () => {
@@ -846,10 +860,20 @@ function buildProvenance(prov, root) {
     loaded = true;
     const parts = [];
 
+    // Tier 1, always present and never fetched: view.json sits beside index.html by
+    // construction (see Geode's docs/adr/0049), so this is true of every Explorer
+    // this host has ever mounted, not just this page.
+    parts.push(`<section><h3>Change what you see</h3>`
+      + `<p>Colours, the legend, hover fields, the theme -- everything about this `
+      + `view lives in one plain JSON file. Edit it in a text editor and reload; `
+      + `no Python, no build step. ${download('view.json', 'Download view.json')}</p>`
+      + `</section>`);
+
     for (const file of prov.files ?? []) {
       try {
         const text = await (await fetch(file.url)).text();
-        parts.push(`<section><h3>${escapeHtml(file.title)}</h3>`
+        parts.push(`<section><div class="dtm-prov-filehead"><h3>${escapeHtml(file.title)}</h3>`
+          + `${download(file.url, 'Download')}</div>`
           + (file.note ? `<p>${escapeHtml(file.note)}</p>` : '')
           + `<pre><code>${escapeHtml(text)}</code></pre></section>`);
       } catch (err) {
@@ -857,6 +881,17 @@ function buildProvenance(prov, root) {
           + `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
           + `</section>`);
       }
+    }
+
+    // Tier 3: only the author knows what their own analysis needs, so this is
+    // opt-in data on the recipe (see python/geode's `notebook(path, requirements=)`)
+    // rather than a guess the host makes up.
+    if (prov.requirements?.length) {
+      const steps = prov.requirements.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+      parts.push(`<section><h3>Running the notebook yourself</h3>`
+        + `<p>Only needed to reproduce the analysis above -- not to change what you `
+        + `see (see "Change what you see").</p><ol class="dtm-prov-reqs">${steps}</ol>`
+        + `</section>`);
     }
 
     if (prov.libraries?.length) {

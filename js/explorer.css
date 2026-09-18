@@ -257,8 +257,7 @@
 }
 
 .dtm-legend-all,
-.dtm-velocity-toggle,
-.dtm-prov-open {
+.dtm-velocity-toggle {
   border: 1px solid var(--dtm-rule);
   border-radius: 5px;
   background: transparent;
@@ -270,12 +269,48 @@
 }
 
 .dtm-legend-all:hover,
-.dtm-velocity-toggle:hover,
-.dtm-prov-open:hover { color: var(--dtm-ink); border-color: var(--dtm-ink-dim); }
+.dtm-velocity-toggle:hover { color: var(--dtm-ink); border-color: var(--dtm-ink-dim); }
 
 .dtm-velocity-toggle.is-off { opacity: 0.4; }
 
 .dtm-velocity-row { margin-bottom: 0.35rem; }
+
+/* The provenance opener: a full-width filled button rather than a small bordered one
+   like the toggles above, and placed first in the panel (see explorer.js) rather than
+   last. A reader who never scrolls the legend should still see it. */
+.dtm-prov-open {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.9rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--dtm-cool);
+  border-radius: 6px;
+  background: var(--dtm-cool);
+  color: var(--dtm-page);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.dtm-prov-open:hover { opacity: 0.85; }
+
+.dtm-prov-download {
+  color: var(--dtm-cool);
+  font-size: 0.7rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dtm-prov-download:hover { text-decoration: underline; }
+
+.dtm-prov-filehead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
 
 .dtm-scale {
   display: flex;
@@ -550,6 +585,15 @@
 
 .dtm-prov-libs span { color: var(--dtm-ink-dim); }
 .dtm-prov-libs p { margin: 0.25rem 0 0; font-size: 0.72rem; }
+
+.dtm-prov-reqs {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.dtm-prov-reqs li { padding: 0.15rem 0; }
 
 .dtm-prov-missing { color: var(--dtm-hot); }
 

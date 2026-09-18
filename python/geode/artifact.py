@@ -197,7 +197,9 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
     script_text = view_script.render(view, out_dir=os.path.basename(out_dir))
     _write(os.path.join(prov_dir, "view_script.py"), script_text)
     files.append({"title": "View Script", "url": "provenance/view_script.py",
-                  "note": "Generated from the calls this view actually received."})
+                  "note": "For reading and checking against what's on screen -- it "
+                          "closes over data that only exists in the notebook that "
+                          "made it, so it does not run standalone."})
 
     if view._notebook and os.path.exists(view._notebook):
         name = os.path.basename(view._notebook)
@@ -205,8 +207,10 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
         files.append({"title": "Author's notebook", "url": "provenance/{}".format(name),
                       "note": "The analysis that produced the data, as written."})
 
-    recipe["provenance"] = {"label": "How this was made", "files": files,
+    recipe["provenance"] = {"label": "View the code", "files": files,
                             "libraries": view._libraries}
+    if view._notebook_requirements:
+        recipe["provenance"]["requirements"] = view._notebook_requirements
 
     _write(os.path.join(out_dir, "view.json"),
            json.dumps(recipe, indent=2, default=str))

@@ -4,6 +4,29 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.9.1
+
+v0.9.0 shipped the provenance drawer but buried it: "How this was made" sat as a
+small bordered button at the very bottom of the legend, past the credits, so a
+reader who did not scroll never saw it. And once opened it showed the View Script
+and the notebook without saying which of them a curious reader could actually *run*
+— the View Script closes over data that only exists in the author's session, so
+"here is the code" was true but misleading about what came next.
+
+- **The button reads "View the code" and opens first, not last.** Full-width,
+  filled with the Theme's cool accent rather than a subtle border, and the first
+  thing `mountExplorer` appends to the legend panel.
+- **The drawer now states three tiers, not two.** (1) `view.json` itself — always
+  offered, downloadable, no Python needed to change a colour or a hover field. (2)
+  The View Script — for reading and checking, explicitly labelled as not runnable
+  standalone. (3) The author's notebook, now with an optional `requirements` list
+  (`view.notebook(path, requirements=[...])`) spelling out what actually reproducing
+  the analysis needs — a conda environment, a non-PyPI package, an expected runtime.
+  Author-supplied, not guessed: the section is simply absent if none were given.
+- **Every shown file gets its own download link**, not just a fetched-and-displayed
+  `<pre>` block — "read this" and "keep a copy of this" were previously the same
+  action and now are not.
+
 ## v0.9.0
 
 The library could draw a reconstruction but not *be* one. This release closes that:

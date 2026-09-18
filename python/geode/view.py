@@ -156,6 +156,7 @@ class View:
         self._log = []
         self._libraries = []
         self._notebook = None
+        self._notebook_requirements = None
 
         self._record("globe", reconstruction=reconstruction,
                      times=(self.start, self.end, self.step),
@@ -199,9 +200,18 @@ class View:
                                 "version": version, "citation": citation})
         return self
 
-    def notebook(self, path):
-        """Bundle the author's own notebook or script beside the View Script."""
+    def notebook(self, path, requirements=None):
+        """Bundle the author's own notebook or script beside the View Script.
+
+        `requirements` is optional plain-language setup steps for reproducing the
+        analysis (a conda environment, a package that is not on PyPI, an expected
+        runtime) -- shown in the provenance drawer under "Running the notebook
+        yourself". Only the author knows what their own analysis needs, so this is
+        opt-in data rather than something the host could guess at. Leaving it out
+        means the drawer simply omits that section rather than showing a guess.
+        """
         self._notebook = os.path.abspath(path)
+        self._notebook_requirements = list(requirements) if requirements else None
         return self
 
     # -- the standard layers ------------------------------------------------
