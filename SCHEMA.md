@@ -575,9 +575,11 @@ for the measurement.
   "files": [{ "title": "View Script", "url": "provenance/view_script.py",
               "note": "Generated from the calls this view actually received." }],
   "requirements": ["conda create -n <your-env-name> -c conda-forge ... (see README)",
-                   "clone the analysis package's repo, then pip install -e its python/ directory -- or sys.path.insert(...) as a quick alternative",
+                   "conda activate <your-env-name>",
                    "pip install git+https://github.com/<org>/<pkg> -- only for whatever is genuinely not on conda-forge or PyPI",
-                   "first export run: ~20 min (reconstructs every boundary frame); after that, cached -- seconds"],
+                   "git clone https://github.com/<org>/<analysis-repo>",
+                   "pip install -e <analysis-repo>/python -- or sys.path.insert(...) as a quick alternative",
+                   "python <notebook>.py -- first export run: ~20 min (reconstructs every boundary frame); after that, cached -- seconds"],
   "libraries": [{ "call": "Zircons.get_mafic_felsic_samples(rock_type=…)",
                   "package": "gprm.datasets", "version": null,
                   "citation": "Puetz, S.J. et al. (2026), …" }] }
@@ -614,6 +616,14 @@ the same breath elsewhere in this drawer's `libraries` list. The first draft of 
 requirements list assumed both came from the same channel because they showed up
 together in the same sentence; they did not, and the fix was to actually check each
 one's own README rather than pattern-match from the other.
+
+**Write `requirements` as a literal terminal session, one command per line, in the
+order a reader would actually type them — not prose describing options.** The
+drawer renders the list numbered, and a reader copy-pastes down it; a step like
+"activate the environment" that got left out because it seemed obvious is a step
+that silently breaks the sequence for someone following along literally. Where a
+line genuinely isn't a command (an expected first-run time, say), keep it last and
+make that clear rather than mixing it in as if it were one.
 
 ## Sizes, for planning
 
