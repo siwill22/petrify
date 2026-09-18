@@ -4,6 +4,113 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.9.0
+
+The library could draw a reconstruction but not *be* one. This release closes that:
+it now ships the raster host the layers draw over, a whole page built from a recipe,
+and a Python API that emits both. A consumer no longer needs a hand-written renderer
+and a hand-written page to use any of it.
+
+- **Added `js/raster-globe.js` and `js/camera.js`: the WebGL projection host.**
+  Moved in from a consumer repo where 710 lines of shader and camera maths sat
+  outside the library that depended on them — orthographic, Spilhaus and Robinson,
+  each a fragment shader inverting the projection per pixel, with a 2-D overlay
+  using the identical camera maths so vectors register with the raster exactly.
+
+  It was never consumer-specific (no host-repo references in any of it), and keeping
+  it out meant the library could draw layers but had nothing to draw them *on*. The
+  class is `RasterGlobe` rather than the old `Globe`, because `Orthographic` and
+  `Robinson` in this barrel are projectors and a third thing called `Globe` invited
+  exactly the confusion the rename removes.
+
+  `camera.js` imports `sphere.js` and `robinson.js` rather than redefining them; the
+  original had its own copies of the unit-vector helpers and the published Robinson
+  table. Its `robinsonForward()` takes a third `centreLonDeg` argument and is
+  therefore NOT re-exported from the barrel, where `robinson.js`'s two-argument
+  function of the same name already lives.
+
+  Not moved: the antimeridian seam splitter, which depends on a vendored copy of
+  d3-geo's clip. `robinson.js`'s own `meridianCrossing()`/`wrapLonDelta()` are the
+  library-native path for the same problem.
+
+- **Added `js/explorer.js` + `js/explorer.css`: a whole Explorer page from a recipe.**
+  An *Explorer* is a globe, standard layers, a time slider, a legend, hover popups
+  and no authored narrative. Measured across seven hand-written pages in one
+  consumer repo: `setTime` and `prefetchAll` in 7/7, `scheduleRender` in 5/7,
+  `parseHash` and `attachCollapse` in 4/7, across 4,773 lines. On the page used as
+  the case study, roughly eight lines of plumbing per line of genuine decision.
+
+  `mountExplorer(recipe, root)` is that plumbing, written once. The recipe is data,
+  not code — it round-trips through JSON, which is what lets a generator emit it and
+  what lets a published page show the decisions that produced it.
+
+  Deliberately NOT covered: Narratives — scroll choreography, authored camera moves,
+  prose interleaved with the map. Three such pages exist and each is large for an
+  unrelated reason, so absorbing them would mean three different escape hatches.
+  That is a stated ceiling, not a gap. The one hatch that does ship is `styleJs`,
+  a module supplying a point's style directly, for genuinely bespoke symbols.
+
+  Exactly two Display Rules ship (`constant`, `age_window`), each justified by a
+  page that exists. A third ships when a real page needs one; growing the list
+  speculatively is how an API becomes a DSL with bad syntax.
+
+- **Added `python/geode/`: the notebook API.** Nine verbs (`globe`, `continents`,
+  `boundaries`, `velocities`, `points`, `timeseries`, `theme`, `caption`, `export`)
+  that turn a DataFrame into a standalone offline viewer. It sits on
+  `deep_time_map`'s exporters rather than replacing them.
+
+  What it does not do is reduce anyone's Python. Measured on the case study: of the
+  341 lines in that page's build scripts, this removes about 35 — the `sys.path`
+  boilerplate and one long `export_points(...)` call. The wrangling and the science
+  are the author's and stay theirs. What it removes is the JavaScript.
+
+  Two things it adds that neither half had:
+
+  *A cache.* Every export is content-addressed on the parameters that determine it,
+  so re-running a view block to change a colour costs nothing, and a reader who
+  re-runs it against an exported artifact needs no pygplates. That draws the honest
+  boundary: colours, grouping, sizes, hover fields and Theme are free; the model and
+  the time range are not, because those are data decisions.
+
+  *A View Script.* Every verb logs its own call, so `export()` emits a canonical,
+  ordered, minimal script that provably reproduces the view — faithful by
+  construction, and immune to the out-of-order cell execution that makes a notebook
+  an unreliable record of itself. The exported page shows it in a drawer, beside a
+  statement of what it cannot contain: the analysis libraries, which are named and
+  pinned rather than pretended at.
+
+## v0.8.0
+
+- **Added `js/themes.js`: named, coherent looks for map furniture.** Consumers had
+  each picked their own land/ocean/background independently and then hand-matched
+  them to this library's `DEFAULT_STYLE`, which meant the "house look" was split
+  across repos with no single definition. A Theme now assigns one colour per ROLE
+  (`page`, `water`, `land`, `outline`, five accents, two speed ramps) and elements
+  claim a role rather than a colour, so a drawable added later inherits every Theme
+  without any Theme being edited.
+
+  Nine Themes ship, covering every cell of the (lightness x temperature) grid so a
+  plain-language request cannot land on nothing. Each also carries `weight` (one
+  scalar over every stroke width and decoration size) and `outline`
+  (`contrast`/`shade`/`none`), because two coherent looks can differ in ink weight
+  alone -- a "for kids" map is thick lines and big subduction triangles, not a hue.
+
+  `boundaryStyle()` returns COMPLETE per-type entries on purpose: `BoundaryLayer`
+  shallow-merges caller style over `DEFAULT_STYLE`, so a partial `{ridge: {stroke}}`
+  silently drops that type's `width`.
+
+- **Added `js/colour.js`.** sRGB/Lab/CIEDE2000 plus Machado (2009) CVD simulation.
+  Not test-only: `outline: 'shade'` derives a pen from the land fill via
+  `withLightnessOf()`, and the Theme legibility gate measures with `distanceUnder()`.
+
+  `withLightnessOf` takes the fill's hue and chroma at the pen's reserved lightness,
+  rather than offsetting from the page by a fixed amount. The offset version failed
+  every `shade` Theme for a structural reason: land is mid-lightness by nature, so a
+  fixed offset lands the pen on top of whichever accent already holds that rung.
+
+  DEFAULT_STYLE and the velocity defaults are unchanged; nothing here alters
+  existing behaviour unless a consumer opts in by passing a Theme's resolved style.
+
 ## v0.7.1
 
 - **Typed the JSDoc on `projectRings` and `tracePolyline`.** This repo ships no `.d.ts`;

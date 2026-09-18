@@ -457,6 +457,134 @@ time_ma,subduction_km,ridge_km,transform_km,other_km,total_km
   that split — generic arc-length/grouping mechanics here, "what counts as a group"
   left to the caller — is deliberate.
 
+## `view.json` — the Explorer recipe
+
+Not reconstruction data: the display half. Everything a page decides, as data rather
+than as JavaScript — which is what lets `python/geode/` emit it, what lets a reader
+change a colour and reload without a rebuild, and what lets the page show its own
+decisions in a provenance drawer.
+
+`js/explorer.js`'s `mountExplorer(recipe, root)` consumes it.
+
+```json
+{
+  "explorer": 1,
+  "title": "Igneous zircons through deep time",
+  "subtitle": "…",
+  "projection": "orthographic",
+  "theme": "abyssal",
+  "camera": { "lon": -60, "lat": 10, "zoom": 1.0, "zoomLimits": [0.6, 4.0] },
+  "time": { "start": 0, "end": 1000, "step": 1, "initial": 300, "playRate": 25 },
+  "credit": { "model": "Merdith2021", "modelLabel": "Merdith et al. (2021)" },
+  "caption": "…",
+  "layers": [ … ],
+  "charts": { "mode": "shade", "sources": [ … ] },
+  "provenance": { "files": [ … ], "libraries": [ … ] }
+}
+```
+
+- `explorer` is the recipe version and is checked, not ignored. A recipe from a
+  future release fails loudly rather than rendering most of itself.
+- **Layer order is draw order.** "What sits on top of what" is a decision the recipe
+  states rather than one buried in the host: velocity arrows over boundaries because
+  where a fast plate meets a trench the arrow is what you want to read against the
+  triangles; points over both because they are the only interactive layer, and a
+  symbol you cannot see you cannot click.
+- `time.start`/`end` are advisory. The host prefers the boundary series' own
+  `timeRange`, so a recipe claiming 0–1000 Ma against frames that stop at 410 scrubs
+  to 410 rather than into empty space.
+
+### Layer kinds
+
+| `kind` | reads | notes |
+|---|---|---|
+| `ocean` | — | a filled disc at the globe's limb. For pages with no paleogeography raster: without it the globe has no body and the vectors float on the page background |
+| `continents` | `continents.json` | `PolygonLayer`; `fillAlpha`, `strokeAlpha`, `lineWidth` |
+| `boundaries` | `boundaries.json` | `BoundarySeries`; style and decoration come from the Theme |
+| `velocities` | `velocities.json` | `VelocityField`; `scaleBar` adds a round-speed reference |
+| `points` | `points.json` | `PointLayer`; see below |
+
+### Theme tokens
+
+Any colour in a recipe may be a token instead of a hex literal:
+
+- `"@accentCool"` — a Theme role (`js/themes.js`)
+- `"@boundary.subduction"` — whatever ink this Theme gives that boundary type
+- `"@outline"` — the resolved coastline pen, honouring Outline Treatment
+
+That is what keeps a chart row the same colour as the map line it annotates when the
+Theme changes. A hex literal in the recipe would silently stop matching.
+
+### `points` layers
+
+```json
+{
+  "kind": "points", "id": "points", "url": "data/points.json",
+  "lifespan": "since", "size": 3.1,
+  "rule": { "type": "age_window", "window": 5, "fade": 0.07 },
+  "colours": { "Felsic": "#ff5fae", "Mafic": "#19e88f" },
+  "legend": { "title": "Zircon samples", "counts": true },
+  "hover": {
+    "eyebrow": "type",
+    "title": ["sample_id"],
+    "rows": [{ "key": "age", "label": "Age", "unit": "Ma",
+               "error": "age_error", "errorUnit": "Myr" }],
+    "footer": "reference"
+  }
+}
+```
+
+**Display Rules.** Exactly two ship, each justified by a page that exists:
+
+- `{"type": "constant"}` — colour depends only on the group.
+- `{"type": "age_window", "window": n, "fade": a}` — bright within `n` Myr of the
+  point's own age, faint outside. A function of (point, *current time*),
+  re-evaluated on every scrub, which is precisely why it is a rule the browser
+  understands rather than a callback the generator could have run.
+
+`fade` is an alpha on the *same* hue, not a second colour: the two have to read as
+one category in two states.
+
+A group with no entry in `colours` is assigned a Theme accent on first sight, in a
+fixed order following the exported point order — so the assignment is stable across
+loads rather than dependent on object-key iteration.
+
+**The escape hatch.** `"styleJs": "data/custom_style.js"` points at a module whose
+default export is `(point, category, api) => ({ fill, … })`. It replaces the rule
+entirely. This is a supported path, not a failure: a page whose symbols are
+genuinely bespoke — pie glyphs sized by sample count, say — belongs there rather
+than in a third rule nobody else could use.
+
+### `charts`
+
+```json
+{ "mode": "shade", "thumbWidth": 14,
+  "sources": [{ "url": "data/chart0.csv",
+                "series": { "subduction_km": { "label": "Subduction", "unit": "km",
+                                               "colour": "@boundary.subduction" } } }] }
+```
+
+`thumbWidth` must match `--dtm-thumb` in `explorer.css`, or the chart's marker
+drifts off the slider thumb at the ends of the axis. See `js/timeseries-panel.js`
+for the measurement.
+
+### `provenance`
+
+```json
+{ "label": "How this was made",
+  "files": [{ "title": "View Script", "url": "provenance/view_script.py",
+              "note": "Generated from the calls this view actually received." }],
+  "libraries": [{ "call": "Zircons.get_mafic_felsic_samples(rock_type=…)",
+                  "package": "gprm.datasets", "version": null,
+                  "citation": "Puetz, S.J. et al. (2026), …" }] }
+```
+
+`files` are fetched and shown verbatim. `libraries` are **named and pinned, not
+shown** — they run outside the browser and cannot be pasted into a panel. The drawer
+says so rather than omitting them silently, because a panel claiming to show "the
+code" while quietly leaving out the package that did the science implies an audit
+trail it does not have.
+
 ## Sizes, for planning
 
 Measured for Merdith2021, 0–250 Ma at 1 Myr, `--tessellate 0.5`:

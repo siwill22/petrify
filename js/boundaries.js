@@ -119,6 +119,30 @@ export class BoundaryLayer {
    * @param ctx        CanvasRenderingContext2D
    * @param projector  anything with project(vec3) -> [x, y, depth] | null
    */
+  /**
+   * Replace stroke colours/widths and decoration sizes after construction --
+   * what a Theme switch needs (see themes.js).
+   *
+   * Takes effect on the next frame with nothing rebuilt: draw() and
+   * _drawTriangles() both read `this.options` live, and neither style nor
+   * decoration size touches the vertex buffer.
+   *
+   * `style` is merged per TYPE, not shallowly over the whole object, so a
+   * caller may pass `{ridge: {stroke}}` without silently dropping ridge's
+   * width -- unlike the constructor, whose shallow merge is load-bearing for
+   * its own "replace the entry wholesale" contract and is left alone.
+   */
+  restyle({ style, triangleGap, triangleSize } = {}) {
+    if (style) {
+      for (const [type, s] of Object.entries(style)) {
+        this.options.style[type] = { ...this.options.style[type], ...s };
+      }
+    }
+    if (triangleGap !== undefined) this.options.triangleGap = triangleGap;
+    if (triangleSize !== undefined) this.options.triangleSize = triangleSize;
+    return this;
+  }
+
   draw(ctx, projector) {
     const project = (v) => projector.project(v);
     // Optional part of the contract -- a flat map supplies it, a camera doesn't.
@@ -348,6 +372,23 @@ export class BoundarySeries {
 
   prefetchAll() {
     for (const f of this.frames) this._load(f);
+  }
+
+  /**
+   * Restyle every frame this series has built AND the options future frames
+   * will be built from. Both halves are needed: layers are cached per frame
+   * time (see _load), so styling only `this.options` would leave every
+   * already-visited age on the old palette until it was evicted -- which it
+   * never is.
+   */
+  restyle(opts) {
+    this.options = {
+      ...this.options,
+      ...opts,
+      style: { ...(this.options.style || {}), ...(opts.style || {}) },
+    };
+    for (const entry of this.layers.values()) entry.layer?.restyle(opts);
+    return this;
   }
 
   draw(ctx, projector) {
