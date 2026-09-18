@@ -574,9 +574,9 @@ for the measurement.
 { "label": "View the code",
   "files": [{ "title": "View Script", "url": "provenance/view_script.py",
               "note": "Generated from the calls this view actually received." }],
-  "requirements": ["conda create -n pygmt17 ... (see README)",
-                   "pip install -e path/to/deep-time-map/python",
-                   "gprm and pygplates, from the GPlates/conda-forge stack",
+  "requirements": ["conda create -n <your-env-name> -c conda-forge ... (see README)",
+                   "clone the analysis package's repo, then pip install -e its python/ directory -- or sys.path.insert(...) as a quick alternative",
+                   "pip install git+https://github.com/<org>/<pkg> -- only for whatever is genuinely not on conda-forge or PyPI",
                    "first export run: ~20 min (reconstructs every boundary frame); after that, cached -- seconds"],
   "libraries": [{ "call": "Zircons.get_mafic_felsic_samples(rock_type=…)",
                   "package": "gprm.datasets", "version": null,
@@ -605,6 +605,15 @@ three different costs:
 cannot be pasted into a panel. The drawer says so rather than omitting them
 silently, because a panel claiming to show "the code" while quietly leaving out the
 package that did the science implies an audit trail it does not have.
+
+**Check each package's actual install story before writing `requirements` —
+don't assume a shared one.** The zircons case study needs `pygplates` (genuinely on
+conda-forge) and `gprm` (neither on conda-forge nor PyPI; `pip install git+...`
+against its own repo) — two different stories for two packages that get mentioned in
+the same breath elsewhere in this drawer's `libraries` list. The first draft of this
+requirements list assumed both came from the same channel because they showed up
+together in the same sentence; they did not, and the fix was to actually check each
+one's own README rather than pattern-match from the other.
 
 ## Sizes, for planning
 
