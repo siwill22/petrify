@@ -26,6 +26,25 @@ actually did — the fetch/filter/classify steps in the notebook's data block, w
   A richer example exists (`StoryMaps/detrital-zircons`'s classifier pipeline) but
   predates `petrify`'s Python API entirely; migrating it is separate, future work.
 
+## v0.12.0
+
+`steps` says what the analysis does; nothing said whether there is anything to
+check that against. A reader curious about a specific step -- "does this sample
+really sit closer to subduction zones than chance?" -- had no way to see evidence
+for it without leaving the page.
+
+- **Added `view.notebook(path, figures=[{"path": ..., "caption": ...}, ...])`.**
+  Static images, bundled into the export and rendered under "What the analysis
+  does" right after `steps`, as supporting evidence. Nothing checks a figure
+  against the steps or against the view -- the caption carries the honesty, same
+  as `cites()` does for a package this drawer cannot show directly. A figure from
+  a genuinely separate analysis (different dataset, different repository) must
+  say so in its own caption.
+- First real use: the zircons case study's four distance-to-subduction-zone
+  heatmaps (mafic/felsic x convergent/rift), from a distinct, soon-to-be-published
+  whole-rock compilation -- not the dataset `igneous_zircons.py` itself uses, and
+  its caption says so.
+
 ## v0.11.1
 
 v0.11.0's "Reproduce this yourself" ran the concept (`steps`) straight into the

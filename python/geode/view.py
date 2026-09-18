@@ -158,6 +158,7 @@ class View:
         self._notebook = None
         self._notebook_requirements = None
         self._notebook_steps = None
+        self._notebook_figures = None
 
         self._record("globe", reconstruction=reconstruction,
                      times=(self.start, self.end, self.step),
@@ -201,7 +202,7 @@ class View:
                                 "version": version, "citation": citation})
         return self
 
-    def notebook(self, path, requirements=None, steps=None):
+    def notebook(self, path, requirements=None, steps=None, figures=None):
         """Bundle the author's own notebook or script beside the View Script.
 
         `requirements` is optional plain-language setup steps for reproducing the
@@ -217,10 +218,19 @@ class View:
         arbitrary code `View` never sees, so only the author can state honestly
         what it does. Leaving it out means the drawer omits that section too,
         rather than guessing at a summary it cannot verify.
+
+        `figures` is an optional list of `{"path": ..., "caption": ...}` dicts --
+        static images bundled alongside the notebook as supporting evidence for
+        `steps`. Each is copied into the export as-is; nothing about a figure's
+        content is checked against the view, so a caption that comes from a
+        different dataset or a separate script than this notebook's own steps
+        must say so plainly, the same way `cites()` names analysis it cannot show
+        directly.
         """
         self._notebook = os.path.abspath(path)
         self._notebook_requirements = list(requirements) if requirements else None
         self._notebook_steps = list(steps) if steps else None
+        self._notebook_figures = list(figures) if figures else None
         return self
 
     # -- the standard layers ------------------------------------------------

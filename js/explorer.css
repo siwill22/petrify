@@ -614,6 +614,28 @@
 
 .dtm-prov-missing { color: var(--dtm-hot); }
 
+.dtm-prov-figures {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 0.6rem 0 1rem;
+}
+
+.dtm-prov-figures figure { margin: 0; }
+
+.dtm-prov-figures img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--dtm-rule);
+  border-radius: 8px;
+}
+
+.dtm-prov-figures figcaption {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--dtm-ink-dim);
+}
+
 /* ---- narrow screens ------------------------------------------------------ */
 
 @media (max-width: 720px) {

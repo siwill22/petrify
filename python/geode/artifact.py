@@ -219,6 +219,14 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
                             "libraries": view._libraries}
     if view._notebook_steps:
         recipe["provenance"]["steps"] = view._notebook_steps
+    if view._notebook_figures:
+        figures = []
+        for fig in view._notebook_figures:
+            name = os.path.basename(fig["path"])
+            _copy(fig["path"], os.path.join(prov_dir, name))
+            figures.append({"url": "provenance/{}".format(name),
+                            "caption": fig.get("caption")})
+        recipe["provenance"]["figures"] = figures
     if view._notebook_requirements:
         recipe["provenance"]["requirements"] = view._notebook_requirements
 

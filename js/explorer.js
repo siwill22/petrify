@@ -888,18 +888,28 @@ function buildProvenance(prov, root) {
 
     // Tier 2, moved up from the bottom: the one tier with a real setup cost, and
     // therefore the one a reader most needs signposted before they scroll past it.
-    if (notebookFile || prov.requirements?.length || prov.steps?.length) {
+    if (notebookFile || prov.requirements?.length || prov.steps?.length || prov.figures?.length) {
       const basename = notebookFile ? notebookFile.url.split('/').pop() : null;
       // Two distinct sections: the concept (what the analysis does, in the
       // author's own words -- never derived, since that code is arbitrary and
       // outside this host's or geode's view) and the implementation (the actual
       // file and how to run it). A reader who only wants the first should not
       // have to wade through the second to find where it ends.
-      const hasSteps = prov.steps?.length > 0;
+      const hasSteps = prov.steps?.length > 0 || prov.figures?.length > 0;
       let concept = '';
-      if (hasSteps) {
+      if (prov.steps?.length) {
         const stepItems = prov.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
         concept = `<h4>What the analysis does</h4><ol class="dtm-prov-list">${stepItems}</ol>`;
+      }
+      if (prov.figures?.length) {
+        // Supporting evidence, not proof: nothing here is checked against the
+        // steps above, so each figure's own caption -- author-written, like
+        // `steps` -- has to carry any honesty about where it actually came from.
+        const figureItems = prov.figures.map((f) => `<figure>`
+          + `<img src="${escapeHtml(f.url)}" alt="${escapeHtml(f.caption ?? '')}" loading="lazy">`
+          + (f.caption ? `<figcaption>${escapeHtml(f.caption)}</figcaption>` : '')
+          + `</figure>`).join('');
+        concept += `<div class="dtm-prov-figures">${figureItems}</div>`;
       }
       let implementation = (hasSteps ? `<h4>Running it yourself</h4>` : '')
         + `<p>This view was made by running a Python program -- people call `
