@@ -172,6 +172,31 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
             _copy(source, path)
         sources.append({"url": "data/{}".format(name), "series": chart["series"]})
 
+    # -- distance heatmap ------------------------------------------------------
+
+    heatmap = None
+    if view._distance_heatmap:
+        dh = view._distance_heatmap
+        cat_fields = list(dh["categories"].keys())
+        samples_cols = ["time", "age", "distance"] + cat_fields
+        samples_records = dh["samples"][samples_cols].to_dict(orient="records")
+        _write(os.path.join(data_dir, "distance_heatmap_samples.json"),
+               json.dumps(samples_records, default=str))
+
+        decile_cols = ["time"] + ["d{}".format(p) for p in range(10, 100, 10)]
+        baseline_records = dh["baseline"][decile_cols].to_dict(orient="records")
+        _write(os.path.join(data_dir, "distance_heatmap_baseline.json"),
+               json.dumps(baseline_records, default=str))
+
+        heatmap = {
+            "samplesUrl": "data/distance_heatmap_samples.json",
+            "baselineUrl": "data/distance_heatmap_baseline.json",
+            "distanceLabel": dh["distance_label"],
+            "categories": dh["categories"],
+        }
+        if dh["note"]:
+            heatmap["note"] = dh["note"]
+
     # -- recipe --------------------------------------------------------------
 
     recipe = {
@@ -190,6 +215,8 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
     if sources:
         recipe["charts"] = {"mode": getattr(view, "chart_mode", "shade"),
                             "sources": sources}
+    if heatmap:
+        recipe["distanceHeatmap"] = heatmap
 
     # -- provenance ----------------------------------------------------------
 

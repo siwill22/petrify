@@ -26,6 +26,33 @@ actually did — the fetch/filter/classify steps in the notebook's data block, w
   A richer example exists (`StoryMaps/detrital-zircons`'s classifier pipeline) but
   predates `petrify`'s Python API entirely; migrating it is separate, future work.
 
+## v0.13.0
+
+The zircons case study's four static distance-to-subduction-zone heatmaps
+(bundled into the provenance drawer as evidence, v0.12.0) were always meant to
+prove the plumbing before this: one live, filterable version of the same idea,
+in the viewer itself.
+
+- **Added `view.distance_heatmap(samples, baseline, ...)`.** A new chart above
+  the time slider — a quantile-shift bar over a time/distance density heatmap,
+  with toggle buttons per category (e.g. rock type, tectonic setting) that
+  recompute both live, client-side. Unlike every other verb, it does not
+  compute anything itself: `samples`/`baseline` are DataFrames the caller
+  already produced (typically via `gprm.utils.molchan`), because that analysis
+  is expensive, exploratory, and often keyed to a different dataset than the
+  view's own `.points()`. See Geode's ADR-0052 for the full reasoning, and why
+  the baseline ships as precomputed deciles rather than raw points.
+- **Added active-point sizing to the `age_window` display rule.** A point
+  within the highlight window now renders 50% larger, and — new — inactive
+  (faint) points are fully inert to hover: no tooltip, no spiderfy
+  participation, whether as an anchor or as a fanned-out member. Traced through
+  `points.js`'s `pick()`/`_nearestDrawn()`/`_membersNear()`, gated on a new
+  `active` flag that rides along in the same per-point style cache `restyle()`
+  already merges arbitrary hook output into — no new storage needed.
+- `recipe.charts` and `recipe.distanceHeatmap` both mount into the same slot
+  above the slider and both stay generically available; a page uses one or the
+  other, not by any special-casing in `explorer.js`.
+
 ## v0.12.0
 
 `steps` says what the analysis does; nothing said whether there is anything to

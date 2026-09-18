@@ -33,6 +33,7 @@ import {
 import { hexToRgb } from './colour.js';
 import { attachHover } from './hover.js';
 import { attachTimeSeries } from './timeseries-panel.js';
+import { attachDistanceHeatmap } from './distance-heatmap-panel.js';
 
 /* ---- small helpers -------------------------------------------------------- */
 
@@ -128,10 +129,17 @@ function makeStyleFn(spec, inks, getTime) {
 
     case 'age_window': {
       const w = rule.window ?? 5;
-      return (point) => {
+      return (point, cat, base) => {
         const ink = inks.for(point.type);
         const dist = point.age == null ? Infinity : Math.abs(getTime() - point.age);
-        return { fill: dist <= w ? ink.bright : ink.faint };
+        const active = dist <= w;
+        // Active points carry the reader's attention -- 50% larger, and the only
+        // ones eligible for hover/spiderfy (see points.js's pick/_nearestDrawn/
+        // _membersNear). `active` rides along in the cached style object because
+        // restyle() already merges any extra key a style hook returns.
+        return { fill: active ? ink.bright : ink.faint,
+                 size: active ? base.size * 1.5 : base.size,
+                 active };
       };
     }
 
@@ -472,9 +480,30 @@ export async function mountExplorer(recipe, root) {
 
   /* ---- charts -------------------------------------------------------------- */
 
-  if (recipe.charts?.sources?.length) {
+  // Two chart mechanisms, both generic and both exposing draw()/setTime(), so the
+  // render loop and setTime() below need no branch of their own -- whichever one
+  // mounts is assigned to the same `timeseries` variable. Neither is page-specific
+  // (see Geode's ADR-0049): a future page can use either, or neither.
+  if (recipe.distanceHeatmap) {
     // Failing to load the chart must not take the globe down with it: it is context
     // for the map, not the map.
+    try {
+      const dh = recipe.distanceHeatmap;
+      timeseries = await attachDistanceHeatmap({
+        element: chartEl,
+        samplesUrl: dh.samplesUrl,
+        baselineUrl: dh.baselineUrl,
+        categories: dh.categories,
+        note: dh.note,
+        range: [minTime, maxTime],
+        thumbWidth: recipe.charts?.thumbWidth ?? 14,
+        onSeek: (t) => { stopPlaying(); setTime(t); },
+        onRender: scheduleRender,
+      });
+    } catch (err) {
+      console.warn('distance heatmap unavailable:', err.message);
+    }
+  } else if (recipe.charts?.sources?.length) {
     try {
       const sources = recipe.charts.sources.map((src) => ({
         url: src.url,
@@ -621,7 +650,7 @@ async function loadLayer(spec, ctx) {
         keylineWidth: spec.keylineWidth ?? 0.6,
         lifespan: spec.lifespan ?? 'since',
         ageWindow: spec.ageWindow ?? 5,
-        style: (point, cat) => style(point, cat, { time: getTime(), inks }),
+        style: (point, cat, base) => style(point, cat, { ...base, time: getTime(), inks }),
       });
     }
 

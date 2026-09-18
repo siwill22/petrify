@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "petrify"
-version = "0.12.0"
+version = "0.13.0"
 description = "Export plate reconstructions as web-ready JSON for deep-time maps"
 requires-python = ">=3.9"
 license = { text = "MIT" }

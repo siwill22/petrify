@@ -396,6 +396,52 @@
   color: var(--dtm-ink-dim);
 }
 
+/* Toggle rows sit below the heatmap, one row per category -- unlike the timeseries
+   mode buttons (single-select, above the chart), these are multi-select per row and
+   read more naturally as filters underneath what they filter. */
+.dtm-chart .dtm-heatmap-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.3rem;
+}
+
+.dtm-heatmap-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.dtm-heatmap-toggle-label {
+  font-size: 0.62rem;
+  color: var(--dtm-ink-dim);
+  min-width: 5.5rem;
+}
+
+.dtm-heatmap-toggle {
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--dtm-rule);
+  border-radius: 4px;
+  background: none;
+  color: var(--dtm-ink-dim);
+  font: inherit;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.dtm-heatmap-toggle:hover {
+  color: var(--dtm-ink);
+  border-color: var(--dtm-cool);
+}
+
+.dtm-heatmap-toggle.is-on {
+  color: var(--dtm-page);
+  background: var(--dtm-cool);
+  border-color: var(--dtm-cool);
+}
+
 .dtm-controls {
   display: flex;
   align-items: center;

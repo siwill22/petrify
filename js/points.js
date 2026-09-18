@@ -550,6 +550,7 @@ export class PointLayer {
     for (let i = 0; i < this.count; i++) {
       const p = screen[i];
       if (!p) continue;                        // not drawn: hidden, absent or occluded
+      if (this._style[i]?.active === false) continue;   // inactive points are inert
       const dx = x - p[0];
       const dy = y - p[1];
       const d2 = dx * dx + dy * dy;
@@ -673,6 +674,7 @@ export class PointLayer {
     for (let i = 0; i < this.count; i++) {
       const p = this._screen[i];
       if (!p) continue;
+      if (this._style[i]?.active === false) continue;   // never a spiderfy anchor
       const d2 = (x - p[0]) ** 2 + (y - p[1]) ** 2;
       if (d2 <= bestD2) { best = i; bestD2 = d2; }
     }
@@ -694,6 +696,7 @@ export class PointLayer {
     for (let i = 0; i < this.count; i++) {
       const p = this._origin[i] || this._screen[i];
       if (!p) continue;
+      if (this._style[i]?.active === false) continue;   // inactive points never fan out
       if ((p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2 <= r2) out.push(i);
     }
     return out;

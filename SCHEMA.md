@@ -568,6 +568,40 @@ than in a third rule nobody else could use.
 drifts off the slider thumb at the ends of the axis. See `js/timeseries-panel.js`
 for the measurement.
 
+### `distanceHeatmap`
+
+Mutually exclusive with `charts` in practice (both mount into the same slot above
+the slider), though the host does not enforce that — `distanceHeatmap` takes
+priority if both are present. A time/distance density plot with a quantile-shift
+bar above it, filterable by one or more toggleable categories.
+
+```json
+{ "samplesUrl": "data/distance_heatmap_samples.json",
+  "baselineUrl": "data/distance_heatmap_baseline.json",
+  "distanceLabel": "Distance to nearest subduction zone",
+  "categories": { "rockType": { "label": "Rock type", "options": ["felsic", "mafic"] },
+                  "setting": { "label": "Tectonic setting", "options": ["convergent", "rift"] } },
+  "note": "From a separate, soon-to-be-published whole-rock compilation -- "
+          "not the samples shown on the globe." }
+```
+
+`samplesUrl` points at one row per real sample: `{"time": ..., "age": ...,
+"distance": ..., "rockType": ..., "setting": ...}` — `time` is the reconstruction
+time bucket (matches `baselineUrl`'s own rows), `age` is the sample's own
+continuous age and is what the heatmap's x axis actually bins on, and every key in
+`categories` must be present so the toggle buttons have something to filter on. `baselineUrl` points at one row per reconstruction time: `{"time": ...,
+"d10": ..., "d20": ..., ..., "d90": ...}` — **deciles of the random baseline, not
+raw baseline points.** The baseline does not depend on which categories are
+toggled on, so the host computes it once (`python/geode/artifact.py`) rather than
+shipping the raw points (tens of thousands of rows per time step) for the browser
+to reduce identically on every toggle change.
+
+`note`, when present, renders **beside the chart, not just in the provenance
+drawer** — this chart sits in primary UI, above the slider, so a caveat about
+where the data actually came from has to be visible without opening anything.
+See Geode's ADR-0052 for why this verb takes pre-computed data at all, unlike
+every other verb that touches `pygplates`.
+
 ### `provenance`
 
 ```json

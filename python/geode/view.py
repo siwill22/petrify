@@ -153,6 +153,7 @@ class View:
 
         self._layers = []
         self._charts = []
+        self._distance_heatmap = None
         self._log = []
         self._libraries = []
         self._notebook = None
@@ -411,6 +412,51 @@ class View:
                      series=series, time=time,
                      mode=None if mode == "shade" else mode,
                      step=step or None)
+        return self
+
+    def distance_heatmap(self, samples, baseline, distance_label="Distance",
+                         categories=None, note=None):
+        """A time/distance heatmap under the slider, with a quantile-shift bar above it.
+
+        Unlike every other verb, this does NOT compute anything -- it packages numbers
+        the caller already has. `.points()` and `.boundaries()` can do their own
+        (cached) reconstruction because pygplates and a rotation model are enough; this
+        chart's numbers come from a proximity analysis (see `gprm.utils.molchan`) that
+        is expensive, exploratory, and often keyed to a dataset the view's own `.points()`
+        never touches. Teaching this verb to run that analysis itself would be real new
+        machinery, not justified until a second consumer needs it (see Geode's ADR-0052).
+
+        `samples` is a DataFrame with one row per real sample: a `time` column (the
+        reconstruction time bucket, matching `baseline`'s own), an `age` column (the
+        sample's own continuous age -- the heatmap's x axis), a `distance` column, and
+        one column per key in `categories` (e.g. `rockType`, `setting`) -- whatever a
+        reader can toggle. Every other column is dropped.
+
+        `baseline` is a DataFrame with one row per reconstruction time: a `time` column
+        and decile columns `d10` .. `d90` -- NOT raw random-point distances. The random
+        baseline does not depend on which samples are toggled on, so its deciles are
+        computed once here rather than shipping the raw points (tens of thousands of
+        rows per time step) for the browser to redo the same arithmetic on every toggle.
+
+        `categories` is `{field: {"label": ..., "options": [...]}}`, one entry per
+        toggleable column in `samples` -- it tells the host what buttons to draw and
+        what each option is called; it does not change how the data is read.
+
+        `note`, shown beside the chart (not just in the provenance drawer): state
+        plainly if `samples` comes from a different dataset than the view's own
+        `.points()` -- this chart is primary UI, not an aside, so the caveat has to be
+        visible without opening anything.
+        """
+        self._distance_heatmap = {
+            "samples": samples, "baseline": baseline,
+            "distance_label": distance_label,
+            "categories": categories or {}, "note": note,
+        }
+        self._record("distance_heatmap",
+                     samples=_caller_name(samples, "samples"),
+                     baseline=_caller_name(baseline, "baseline"),
+                     distance_label=_unless(distance_label, "Distance"),
+                     categories=categories, note=note)
         return self
 
     # -- presentation -------------------------------------------------------
