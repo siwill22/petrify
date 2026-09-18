@@ -4,6 +4,25 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.10.2
+
+Testing v0.10.1's own instructions end to end — clone the repo, `pip install -e
+python/`, run the notebook from that same directory — reproduced a real
+`AttributeError: module 'petrify' has no attribute 'export_series'`.
+
+- **Fixed `geode.build._petrify()`'s import, which the rename made fragile.**
+  The repository a reader clones is itself named `petrify`, so running the
+  notebook from the directory `git clone` created leaves an empty `petrify/`
+  sitting in the current directory. Python's import system builds a namespace
+  package out of that empty directory before pip's editable-install finder
+  ever gets a chance to run — `import petrify` "succeeds" but returns
+  something with no `export_series` and no `__file__`. `_petrify()` was only
+  catching `ImportError`, which this case never raises. It now also checks for
+  the attribute, and on failure drops the shadowed module from `sys.modules`
+  before re-importing with the real path prepended. Reproduced and confirmed
+  fixed in a throwaway venv following the documented steps exactly, not just
+  reasoned through.
+
 ## v0.10.1
 
 The provenance drawer's own first real user hit two problems in one sitting:

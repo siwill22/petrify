@@ -18,10 +18,22 @@ def _petrify():
 
     `geode` ships beside `petrify` in the same repository, so a user who put
     the repo on their path once should not have to do it again per package.
+
+    The repository a reader clones is *also* named `petrify`, so running the
+    notebook from the directory that `git clone` created leaves an empty
+    `petrify/` sitting in the current directory. Python's import system finds
+    that directory before it ever reaches pip's editable-install machinery
+    and happily builds an empty namespace package out of it -- `import
+    petrify` succeeds, but the result has no `export_series` and no
+    `__file__`. Checking for the attribute, not just catching ImportError, is
+    what tells the real package apart from that empty stand-in.
     """
     try:
         import petrify
+        if not hasattr(petrify, "export_series"):
+            raise ImportError("shadowed by an unrelated 'petrify' on sys.path")
     except ImportError:
+        sys.modules.pop("petrify", None)
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         import petrify
     return petrify
