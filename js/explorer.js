@@ -823,23 +823,31 @@ function buildVelocityRow(velocities, spec, globe, theme, render) {
 /**
  * The drawer that connects the picture back to the science.
  *
- * Three tiers, because "the code" means three different things with three
- * different costs, and a curious reader deserves to know which one they are
- * looking at before they invest in it:
+ * Ordered by what a reader with NO context does first, not by how the pieces are
+ * generated. That used to be the same order (view.json, View Script, notebook) and
+ * it was wrong: the two actionable tiers a reader might actually act on immediately
+ * are "change a colour" and "reproduce this from scratch" -- the View Script is
+ * reference material nobody should try to run, so it no longer sits between them.
  *
- *   1. this view.json -- a plain data file. Download it, edit a colour or a
+ *   1. **this view.json** -- a plain data file. Download it, edit a colour or a
  *      hover field, reload. No Python, no install, nothing to set up.
- *   2. the View Script -- generated, canonical, provably what produced this
- *      view. For READING and checking against what is on screen -- it closes
- *      over data (a DataFrame, say) that only exists in the author's own
- *      session, so it does not run standalone.
- *   3. the author's own notebook, if bundled -- the thing that actually
- *      reproduces the analysis, and the one tier with a real setup cost
- *      (`prov.requirements`, when the author supplied any).
+ *   2. **Reproduce this yourself** -- the notebook (if bundled) plus
+ *      `prov.requirements`: a literal, ordered terminal session, because this is
+ *      the one tier with a real setup cost and the one most likely to be attempted.
+ *   3. **View Script** -- generated, canonical, provably what produced this view,
+ *      but explicitly labelled "you do not need to do anything with this": it
+ *      closes over data that only exists in the notebook's own session, so it
+ *      cannot be run on its own, and that has to be stated plainly rather than
+ *      implied by a caveat a skimming reader will miss.
  *
  * And a fourth thing stated rather than shown: the analysis libraries. A panel
  * claiming to show "the code" while silently omitting the package that did the
  * science would be worse than one that names and pins it.
+ *
+ * `file.role` ('notebook' | 'viewScript') is how this function tells the two
+ * well-known files apart, rather than matching on `file.title` text -- see
+ * python/geode/artifact.py, which sets it. Any OTHER bundled file (no `role`)
+ * still renders generically, in the fallback loop, so this stays extensible.
  */
 function buildProvenance(prov, root) {
   const btn = el('button', 'dtm-prov-open', prov.label ?? 'View the code');
@@ -853,12 +861,21 @@ function buildProvenance(prov, root) {
   const download = (url, label) => `<a class="dtm-prov-download" href="${escapeHtml(url)}" `
     + `download>${escapeHtml(label ?? 'Download')}</a>`;
 
+  const fetchText = async (url) => {
+    try { return { text: await (await fetch(url)).text() }; } catch (err) { return { err }; }
+  };
+
   let loaded = false;
   btn.addEventListener('click', async () => {
     drawer.classList.add('is-open');
     if (loaded) return;
     loaded = true;
     const parts = [];
+
+    const files = prov.files ?? [];
+    const notebookFile = files.find((f) => f.role === 'notebook');
+    const scriptFile = files.find((f) => f.role === 'viewScript');
+    const otherFiles = files.filter((f) => f !== notebookFile && f !== scriptFile);
 
     // Tier 1, always present and never fetched: view.json sits beside index.html by
     // construction (see Geode's docs/adr/0049), so this is true of every Explorer
@@ -869,28 +886,59 @@ function buildProvenance(prov, root) {
       + `no Python, no build step. ${download('view.json', 'Download view.json')}</p>`
       + `</section>`);
 
-    for (const file of prov.files ?? []) {
-      try {
-        const text = await (await fetch(file.url)).text();
-        parts.push(`<section><div class="dtm-prov-filehead"><h3>${escapeHtml(file.title)}</h3>`
-          + `${download(file.url, 'Download')}</div>`
-          + (file.note ? `<p>${escapeHtml(file.note)}</p>` : '')
-          + `<pre><code>${escapeHtml(text)}</code></pre></section>`);
-      } catch (err) {
-        parts.push(`<section><h3>${escapeHtml(file.title)}</h3>`
-          + `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
-          + `</section>`);
+    // Tier 2, moved up from the bottom: the one tier with a real setup cost, and
+    // therefore the one a reader most needs signposted before they scroll past it.
+    if (notebookFile || prov.requirements?.length) {
+      const basename = notebookFile ? notebookFile.url.split('/').pop() : null;
+      let intro = `<p>This view was made by running a Python program -- people call `
+        + `this kind of file a "notebook" -- on a computer with some extra `
+        + `scientific software installed. If none of that means anything to you, `
+        + `that's fine; every step is below.</p>`;
+      let notebookBlock = '';
+      if (notebookFile) {
+        const { text, err } = await fetchText(notebookFile.url);
+        intro += `<p>The program itself is called <code>${escapeHtml(basename)}</code> `
+          + `${download(notebookFile.url, `Download ${basename}`)}. Save it into an `
+          + `empty folder on your computer -- the steps below assume everything `
+          + `happens inside that same folder.</p>`;
+        notebookBlock = err
+          ? `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
+          : `<pre><code>${escapeHtml(text)}</code></pre>`;
       }
+      const steps = (prov.requirements ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+      parts.push(`<section><h3>Reproduce this yourself</h3>${intro}`
+        + (steps ? `<ol class="dtm-prov-reqs">${steps}</ol>` : '')
+        + notebookBlock + `</section>`);
     }
 
-    // Tier 3: only the author knows what their own analysis needs, so this is
-    // opt-in data on the recipe (see python/geode's `notebook(path, requirements=)`)
-    // rather than a guess the host makes up.
-    if (prov.requirements?.length) {
-      const steps = prov.requirements.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
-      parts.push(`<section><h3>Running the notebook yourself</h3>`
-        + `<p>Only needed to reproduce the analysis above -- not to change what you `
-        + `see (see "Change what you see").</p><ol class="dtm-prov-reqs">${steps}</ol>`
+    // Tier 3, moved down: reference material, not a second way to run this. Stated
+    // as an instruction ("you do not need to do anything with this"), not implied.
+    if (scriptFile) {
+      const { text, err } = await fetchText(scriptFile.url);
+      parts.push(`<section><div class="dtm-prov-filehead">`
+        + `<h3>View Script <span class="dtm-prov-tag">reference only</span></h3>`
+        + `${download(scriptFile.url, 'Download')}</div>`
+        + `<p><strong>You do not need to do anything with this.</strong> It is an `
+        + `exact, automatically-generated record of the handful of lines of code `
+        + `that decided what you see -- shown so anyone can check, line by line, `
+        + `that the notebook above really does produce this exact view. It will `
+        + `NOT run if you copy and paste it: it refers to a table of data that `
+        + `only exists after the notebook's own earlier steps have already run. `
+        + `That code already lives, unchanged, inside the notebook above.</p>`
+        + (err ? `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
+               : `<pre><code>${escapeHtml(text)}</code></pre>`)
+        + `</section>`);
+    }
+
+    // Any other bundled file: no special framing exists for it, so render it
+    // generically rather than silently dropping it.
+    for (const file of otherFiles) {
+      const { text, err } = await fetchText(file.url);
+      parts.push(`<section><div class="dtm-prov-filehead"><h3>${escapeHtml(file.title)}</h3>`
+        + `${download(file.url, 'Download')}</div>`
+        + (file.note ? `<p>${escapeHtml(file.note)}</p>` : '')
+        + (err ? `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
+                : `<pre><code>${escapeHtml(text)}</code></pre>`)
         + `</section>`);
     }
 

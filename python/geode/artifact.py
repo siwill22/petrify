@@ -193,19 +193,27 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
 
     # -- provenance ----------------------------------------------------------
 
+    # `role` lets the host (js/explorer.js) find these two specific files and give
+    # each its own zero-context explanation, rather than matching on `title` text
+    # (fragile) or treating every file identically (the View Script and the
+    # notebook need to say very different things to a reader with no context).
     files = []
     script_text = view_script.render(view, out_dir=os.path.basename(out_dir))
     _write(os.path.join(prov_dir, "view_script.py"), script_text)
     files.append({"title": "View Script", "url": "provenance/view_script.py",
-                  "note": "For reading and checking against what's on screen -- it "
-                          "closes over data that only exists in the notebook that "
-                          "made it, so it does not run standalone."})
+                  "role": "viewScript",
+                  "note": "The exact code that produced this view, generated "
+                          "automatically -- not written by hand, and not meant "
+                          "to be run on its own."})
 
     if view._notebook and os.path.exists(view._notebook):
         name = os.path.basename(view._notebook)
         _copy(view._notebook, os.path.join(prov_dir, name))
         files.append({"title": "Author's notebook", "url": "provenance/{}".format(name),
-                      "note": "The analysis that produced the data, as written."})
+                      "role": "notebook",
+                      "note": "The full analysis, exactly as the author wrote it "
+                              "-- the file to download and run to reproduce this "
+                              "from scratch."})
 
     recipe["provenance"] = {"label": "View the code", "files": files,
                             "libraries": view._libraries}

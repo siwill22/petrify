@@ -49,4 +49,4 @@ __all__ = [
     "verify_equal_area",
 ]
 
-__version__ = "0.9.1"
+__version__ = "0.10.1"

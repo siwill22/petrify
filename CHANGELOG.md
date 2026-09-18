@@ -4,6 +4,33 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.10.1
+
+The provenance drawer's own first real user hit two problems in one sitting:
+the run-it-yourself steps sat at the bottom, past the reference material nobody
+should try to run, and the actual sequence — checked package by package, not run
+end to end — still failed on a transitive dependency nobody's README mentioned.
+
+- **Reordered the drawer around what a reader with no context does first.**
+  "Reproduce this yourself" (the notebook + `requirements`, the one tier with a
+  real setup cost) now comes right after the free "change a colour" tier, not
+  after the View Script. The View Script moved down and now says outright — not
+  as an implied caveat — "you do not need to do anything with this."
+- **The notebook's own filename and download link are now shown directly in
+  "Reproduce this yourself"**, derived from the file's `url`, not from prose a page
+  author has to keep in sync by hand. A reader following a numbered list to
+  `python <notebook>.py` no longer has to infer which earlier heading that file
+  came from.
+- **Added `file.role` ('notebook' | 'viewScript')** so the host can tell these two
+  well-known files apart structurally instead of matching on `title` text. Any
+  other bundled file still renders, generically, in a fallback loop.
+- **The zircons case study's `requirements` needed a fourth package.** A bare
+  `conda create ... python pygmt pygplates` has no `setuptools`; `gprm`'s own
+  dependency `PlateTectonicTools` still imports the `pkg_resources` API current
+  `setuptools` has dropped. Fixed with `"setuptools<81"` pinned into the create
+  line — found only by actually running the sequence, not by checking each
+  package's own channel in isolation. See `SCHEMA.md`'s new note on this.
+
 ## v0.10.0
 
 Renamed from `deep-time-map` to `petrify`, and the repository made public.

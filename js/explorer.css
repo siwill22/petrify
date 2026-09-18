@@ -305,6 +305,14 @@
 
 .dtm-prov-download:hover { text-decoration: underline; }
 
+.dtm-prov-tag {
+  font-size: 0.62rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dtm-ink-dim);
+}
+
 .dtm-prov-filehead {
   display: flex;
   align-items: baseline;

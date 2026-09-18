@@ -573,7 +573,11 @@ for the measurement.
 ```json
 { "label": "View the code",
   "files": [{ "title": "View Script", "url": "provenance/view_script.py",
-              "note": "Generated from the calls this view actually received." }],
+              "role": "viewScript",
+              "note": "Generated automatically -- not meant to be run on its own." },
+            { "title": "Author's notebook", "url": "provenance/<notebook>.py",
+              "role": "notebook",
+              "note": "The file to download and run to reproduce this from scratch." }],
   "requirements": ["conda create -n <your-env-name> -c conda-forge ... (see README)",
                    "conda activate <your-env-name>",
                    "pip install git+https://github.com/<org>/<pkg> -- only for whatever is genuinely not on conda-forge or PyPI",
@@ -585,23 +589,38 @@ for the measurement.
                   "citation": "Puetz, S.J. et al. (2026), …" }] }
 ```
 
-The drawer shows three tiers, because "the code" means three different things with
-three different costs:
+The drawer is ordered by what a reader with **no context** would actually do first,
+not by how the pieces are generated — an earlier version put the View Script
+between `view.json` and the notebook, which buried the one tier with a real setup
+cost behind reference material nobody should try to run:
 
 1. **`view.json` itself** — always offered, unconditionally, not part of this block
    at all: it sits beside `index.html` by construction (every Explorer this host
    mounts has one), so the drawer always opens with "download this and edit it,
    no Python needed" before showing anything else.
-2. **The View Script** (`files`) — generated, canonical, provably what produced the
-   view. Fetched and shown verbatim, with a download link. It closes over data (a
-   DataFrame, say) that exists only in the notebook that made it, so it is for
-   *reading*, not running.
-3. **The author's notebook and `requirements`** — the one tier that actually
-   reproduces the analysis, and the one with a real setup cost. `requirements` is
-   optional, author-supplied plain-language steps (`python/geode`'s
-   `view.notebook(path, requirements=[...])`); the host does not guess at what a
-   given analysis needs, so this section is simply absent if the author supplied
-   nothing.
+2. **"Reproduce this yourself"** (`files` entry with `role: "notebook"`, plus
+   `requirements`) — the one tier with a real setup cost, so it comes right after
+   the free one rather than at the bottom past everything else. The host names the
+   notebook's own filename and offers its download link directly in this section
+   (derived from the file's `url`, not authored prose), because a reader following
+   a numbered list to `python <notebook>.py` needs to already know where that file
+   came from, not be told to scroll back up and infer it from a different heading.
+3. **View Script** (`files` entry with `role: "viewScript"`) — generated,
+   canonical, provably what produced the view, with an explicit instruction rather
+   than an implied caveat: **"you do not need to do anything with this."** It closes
+   over data (a DataFrame, say) that exists only in the notebook's own session, so
+   it cannot run standalone, and that has to be stated plainly or a reader tries it,
+   fails, and has no idea why.
+
+`role` is how the host tells these two well-known files apart, rather than matching
+on `title` text. Any other bundled file (no `role`) still renders — generically, in
+a fallback loop — so the mechanism stays open to a future third kind of file without
+the host needing to know its name in advance.
+
+`requirements` itself is optional, author-supplied plain-language steps
+(`python/geode`'s `view.notebook(path, requirements=[...])`); the host does not
+guess at what a given analysis needs, so the whole "Reproduce this yourself" section
+is simply absent if the author supplied neither a notebook nor any requirements.
 
 `libraries` are **named and pinned, not shown** — they run outside the browser and
 cannot be pasted into a panel. The drawer says so rather than omitting them
@@ -624,6 +643,17 @@ drawer renders the list numbered, and a reader copy-pastes down it; a step like
 that silently breaks the sequence for someone following along literally. Where a
 line genuinely isn't a command (an expected first-run time, say), keep it last and
 make that clear rather than mixing it in as if it were one.
+
+**Actually run the sequence end to end in a fresh environment before trusting it —
+checking each package's channel is not the same as checking the install works.**
+The zircons `requirements` passed that channel check and still failed: a bare
+`conda create ... python pygmt pygplates` has no `setuptools`, and a dependency two
+levels down (`PlateTectonicTools`, pulled in by `gprm`) still imports the
+`pkg_resources` API that current `setuptools` versions have dropped, so `import
+gprm` failed with `ModuleNotFoundError: No module named 'pkg_resources'` on the very
+first real attempt. The fix is `"setuptools<81"` pinned into the `conda create`
+line. Nothing about that transitive dependency was visible from either package's
+own README — it only showed up by running the actual sequence.
 
 ## Sizes, for planning
 
