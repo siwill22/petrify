@@ -594,14 +594,14 @@
 .dtm-prov-libs span { color: var(--dtm-ink-dim); }
 .dtm-prov-libs p { margin: 0.25rem 0 0; font-size: 0.72rem; }
 
-.dtm-prov-reqs {
+.dtm-prov-list {
   margin: 0;
   padding-left: 1.1rem;
   font-size: 0.8rem;
   line-height: 1.6;
 }
 
-.dtm-prov-reqs li { padding: 0.15rem 0; }
+.dtm-prov-list li { padding: 0.15rem 0; }
 
 .dtm-prov-missing { color: var(--dtm-hot); }
 

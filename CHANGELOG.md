@@ -4,6 +4,28 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.11.0
+
+The drawer could already say how to set up the environment and show exactly what
+`geode` built (the View Script). Neither says what the author's own analysis
+actually did — the fetch/filter/classify steps in the notebook's data block, which
+`geode` deliberately never sees.
+
+- **Added `view.notebook(path, steps=[...])`.** An optional, author-written,
+  one-line-per-step account of the analysis, shown in "Reproduce this yourself"
+  before the setup instructions. Deliberately not derived from anything: the data
+  block is arbitrary code outside `View`'s knowledge, and a tool guessing at a
+  summary would risk claiming an audit trail it does not have — the same failure
+  mode ADR-0048 already rules out for the View Script. Kept as a keyword on the
+  existing `.notebook()` verb rather than a new one, per ADR-0046's cap on the verb
+  surface.
+- Renamed the `requirements` list's CSS class from `.dtm-prov-reqs` to the shared
+  `.dtm-prov-list`, since `steps` needed the identical numbered-list styling and two
+  copies of the same rule serve nothing.
+- Validated on the zircons case study's own (modest) analysis — four real steps.
+  A richer example exists (`StoryMaps/detrital-zircons`'s classifier pipeline) but
+  predates `petrify`'s Python API entirely; migrating it is separate, future work.
+
 ## v0.10.2
 
 Testing v0.10.1's own instructions end to end — clone the repo, `pip install -e

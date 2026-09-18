@@ -157,6 +157,7 @@ class View:
         self._libraries = []
         self._notebook = None
         self._notebook_requirements = None
+        self._notebook_steps = None
 
         self._record("globe", reconstruction=reconstruction,
                      times=(self.start, self.end, self.step),
@@ -200,7 +201,7 @@ class View:
                                 "version": version, "citation": citation})
         return self
 
-    def notebook(self, path, requirements=None):
+    def notebook(self, path, requirements=None, steps=None):
         """Bundle the author's own notebook or script beside the View Script.
 
         `requirements` is optional plain-language setup steps for reproducing the
@@ -209,9 +210,17 @@ class View:
         yourself". Only the author knows what their own analysis needs, so this is
         opt-in data rather than something the host could guess at. Leaving it out
         means the drawer simply omits that section rather than showing a guess.
+
+        `steps` is an optional, author-written, one-line-per-step account of what
+        the analysis block actually does -- fetch, filter, classify, whatever it
+        really is. This can never be generated FROM the notebook: the data block is
+        arbitrary code `View` never sees, so only the author can state honestly
+        what it does. Leaving it out means the drawer omits that section too,
+        rather than guessing at a summary it cannot verify.
         """
         self._notebook = os.path.abspath(path)
         self._notebook_requirements = list(requirements) if requirements else None
+        self._notebook_steps = list(steps) if steps else None
         return self
 
     # -- the standard layers ------------------------------------------------

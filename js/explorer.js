@@ -888,12 +888,19 @@ function buildProvenance(prov, root) {
 
     // Tier 2, moved up from the bottom: the one tier with a real setup cost, and
     // therefore the one a reader most needs signposted before they scroll past it.
-    if (notebookFile || prov.requirements?.length) {
+    if (notebookFile || prov.requirements?.length || prov.steps?.length) {
       const basename = notebookFile ? notebookFile.url.split('/').pop() : null;
       let intro = `<p>This view was made by running a Python program -- people call `
         + `this kind of file a "notebook" -- on a computer with some extra `
         + `scientific software installed. If none of that means anything to you, `
         + `that's fine; every step is below.</p>`;
+      // What the author's own analysis does, in their own words -- never derived,
+      // since that code is arbitrary and outside this host's (or geode's) view.
+      if (prov.steps?.length) {
+        const stepItems = prov.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+        intro += `<p><strong>What the analysis does, in order:</strong></p>`
+          + `<ol class="dtm-prov-list">${stepItems}</ol>`;
+      }
       let notebookBlock = '';
       if (notebookFile) {
         const { text, err } = await fetchText(notebookFile.url);
@@ -905,9 +912,9 @@ function buildProvenance(prov, root) {
           ? `<p class="dtm-prov-missing">not bundled (${escapeHtml(err.message)})</p>`
           : `<pre><code>${escapeHtml(text)}</code></pre>`;
       }
-      const steps = (prov.requirements ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+      const reqItems = (prov.requirements ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join('');
       parts.push(`<section><h3>Reproduce this yourself</h3>${intro}`
-        + (steps ? `<ol class="dtm-prov-reqs">${steps}</ol>` : '')
+        + (reqItems ? `<ol class="dtm-prov-list">${reqItems}</ol>` : '')
         + notebookBlock + `</section>`);
     }
 

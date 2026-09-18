@@ -217,6 +217,8 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
 
     recipe["provenance"] = {"label": "View the code", "files": files,
                             "libraries": view._libraries}
+    if view._notebook_steps:
+        recipe["provenance"]["steps"] = view._notebook_steps
     if view._notebook_requirements:
         recipe["provenance"]["requirements"] = view._notebook_requirements
 

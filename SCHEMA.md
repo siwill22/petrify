@@ -578,6 +578,9 @@ for the measurement.
             { "title": "Author's notebook", "url": "provenance/<notebook>.py",
               "role": "notebook",
               "note": "The file to download and run to reproduce this from scratch." }],
+  "steps": ["Fetch the raw samples via <package>.datasets.<Thing>",
+            "Drop rows outside the model's own time range",
+            "Classify each sample against <criterion>"],
   "requirements": ["conda create -n <your-env-name> -c conda-forge ... (see README)",
                    "conda activate <your-env-name>",
                    "pip install git+https://github.com/<org>/<pkg> -- only for whatever is genuinely not on conda-forge or PyPI",
@@ -599,12 +602,14 @@ cost behind reference material nobody should try to run:
    mounts has one), so the drawer always opens with "download this and edit it,
    no Python needed" before showing anything else.
 2. **"Reproduce this yourself"** (`files` entry with `role: "notebook"`, plus
-   `requirements`) — the one tier with a real setup cost, so it comes right after
-   the free one rather than at the bottom past everything else. The host names the
-   notebook's own filename and offers its download link directly in this section
-   (derived from the file's `url`, not authored prose), because a reader following
-   a numbered list to `python <notebook>.py` needs to already know where that file
-   came from, not be told to scroll back up and infer it from a different heading.
+   `steps` and `requirements`) — the one tier with a real setup cost, so it comes
+   right after the free one rather than at the bottom past everything else. The
+   host names the notebook's own filename and offers its download link directly in
+   this section (derived from the file's `url`, not authored prose), because a
+   reader following a numbered list to `python <notebook>.py` needs to already know
+   where that file came from, not be told to scroll back up and infer it from a
+   different heading. `steps`, when present, renders first within this section —
+   what the analysis does, before how to set it up.
 3. **View Script** (`files` entry with `role: "viewScript"`) — generated,
    canonical, provably what produced the view, with an explicit instruction rather
    than an implied caveat: **"you do not need to do anything with this."** It closes
@@ -621,6 +626,18 @@ the host needing to know its name in advance.
 (`python/geode`'s `view.notebook(path, requirements=[...])`); the host does not
 guess at what a given analysis needs, so the whole "Reproduce this yourself" section
 is simply absent if the author supplied neither a notebook nor any requirements.
+
+`steps` is the same shape of thing for a different question: not how to set up the
+environment, but what the analysis block actually does (fetch, filter, classify —
+whatever it really is), one line per step, in order. It is **never derived from the
+notebook** — `python/geode`'s `View` object only ever sees the view-building calls
+(`globe`, `points`, `boundaries`, ...), which are what the generated View Script
+already shows faithfully. The data block above those calls is arbitrary code the
+`View` never touches, so nothing but the author can state honestly what it does; a
+tool guessing at a summary from source text or comments would risk claiming an
+audit trail it does not have, the same failure mode ADR-0048 rules out for the View
+Script itself. `steps` is opt-in via `view.notebook(path, steps=[...])`, exactly
+like `requirements` — leaving it out simply omits that part of the section.
 
 `libraries` are **named and pinned, not shown** — they run outside the browser and
 cannot be pasted into a panel. The drawer says so rather than omitting them
