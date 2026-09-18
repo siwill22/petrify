@@ -560,6 +560,15 @@
 
 .dtm-prov section:first-child h3 { margin-top: 0; }
 
+.dtm-prov h4 {
+  margin: 1.1rem 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dtm-ink-dim);
+}
+
 .dtm-prov p {
   margin: 0 0 0.7rem;
   font-size: 0.8rem;

@@ -890,21 +890,26 @@ function buildProvenance(prov, root) {
     // therefore the one a reader most needs signposted before they scroll past it.
     if (notebookFile || prov.requirements?.length || prov.steps?.length) {
       const basename = notebookFile ? notebookFile.url.split('/').pop() : null;
-      let intro = `<p>This view was made by running a Python program -- people call `
+      // Two distinct sections: the concept (what the analysis does, in the
+      // author's own words -- never derived, since that code is arbitrary and
+      // outside this host's or geode's view) and the implementation (the actual
+      // file and how to run it). A reader who only wants the first should not
+      // have to wade through the second to find where it ends.
+      const hasSteps = prov.steps?.length > 0;
+      let concept = '';
+      if (hasSteps) {
+        const stepItems = prov.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
+        concept = `<h4>What the analysis does</h4><ol class="dtm-prov-list">${stepItems}</ol>`;
+      }
+      let implementation = (hasSteps ? `<h4>Running it yourself</h4>` : '')
+        + `<p>This view was made by running a Python program -- people call `
         + `this kind of file a "notebook" -- on a computer with some extra `
         + `scientific software installed. If none of that means anything to you, `
         + `that's fine; every step is below.</p>`;
-      // What the author's own analysis does, in their own words -- never derived,
-      // since that code is arbitrary and outside this host's (or geode's) view.
-      if (prov.steps?.length) {
-        const stepItems = prov.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join('');
-        intro += `<p><strong>What the analysis does, in order:</strong></p>`
-          + `<ol class="dtm-prov-list">${stepItems}</ol>`;
-      }
       let notebookBlock = '';
       if (notebookFile) {
         const { text, err } = await fetchText(notebookFile.url);
-        intro += `<p>The program itself is called <code>${escapeHtml(basename)}</code> `
+        implementation += `<p>The program itself is called <code>${escapeHtml(basename)}</code> `
           + `${download(notebookFile.url, `Download ${basename}`)}. Save it into an `
           + `empty folder on your computer -- the steps below assume everything `
           + `happens inside that same folder.</p>`;
@@ -913,7 +918,7 @@ function buildProvenance(prov, root) {
           : `<pre><code>${escapeHtml(text)}</code></pre>`;
       }
       const reqItems = (prov.requirements ?? []).map((s) => `<li>${escapeHtml(s)}</li>`).join('');
-      parts.push(`<section><h3>Reproduce this yourself</h3>${intro}`
+      parts.push(`<section><h3>Reproduce this yourself</h3>${concept}${implementation}`
         + (reqItems ? `<ol class="dtm-prov-list">${reqItems}</ol>` : '')
         + notebookBlock + `</section>`);
     }

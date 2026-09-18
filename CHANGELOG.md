@@ -26,6 +26,18 @@ actually did — the fetch/filter/classify steps in the notebook's data block, w
   A richer example exists (`StoryMaps/detrital-zircons`'s classifier pipeline) but
   predates `petrify`'s Python API entirely; migrating it is separate, future work.
 
+## v0.11.1
+
+v0.11.0's "Reproduce this yourself" ran the concept (`steps`) straight into the
+implementation (the file, `requirements`, the code) with no visual break — a
+reader scanning for where "what it does" ends and "how to run it" begins had
+nothing to look for.
+
+- **Split the section under two subheadings** when `steps` is present: "What the
+  analysis does" (the concept), then "Running it yourself" (the file, setup, code).
+  Absent `steps`, the section renders exactly as before — no new heading noise for
+  pages that only have `requirements`.
+
 ## v0.10.2
 
 Testing v0.10.1's own instructions end to end — clone the repo, `pip install -e

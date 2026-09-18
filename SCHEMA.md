@@ -608,8 +608,11 @@ cost behind reference material nobody should try to run:
    this section (derived from the file's `url`, not authored prose), because a
    reader following a numbered list to `python <notebook>.py` needs to already know
    where that file came from, not be told to scroll back up and infer it from a
-   different heading. `steps`, when present, renders first within this section —
-   what the analysis does, before how to set it up.
+   different heading. When `steps` is present, this section splits under two
+   subheadings — "What the analysis does" (the concept, `steps`) then "Running it
+   yourself" (the implementation: the file, `requirements`, the code) — so a reader
+   who only wants the first is not left guessing where it ends and the setup detail
+   begins.
 3. **View Script** (`files` entry with `role: "viewScript"`) — generated,
    canonical, provably what produced the view, with an explicit instruction rather
    than an implied caveat: **"you do not need to do anything with this."** It closes
