@@ -36,6 +36,7 @@ MODEL_CREDITS = {
     "Scotese2016": "Scotese & Wright (2018)",
     "Seton2012": "Seton et al. (2012)",
     "Zahirovic2022": "Zahirovic et al. (2022)",
+    "TorsvikCocks2017": "Torsvik & Cocks (2017)",
 }
 
 
@@ -321,7 +322,7 @@ class View:
                colours=None, lifespan="since", window=None, highlight=None, size=3.4,
                keyline_alpha=0.55, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
-               legend_title=None, name=None):
+               legend_title=None, name=None, plate_id=None):
         """Put a DataFrame of located, dated things on the globe.
 
         `age`, `lon`, `lat`, `group` and everything in `hover` are COLUMN NAMES. The
@@ -342,6 +343,15 @@ class View:
         already encodes its own per-feature window (e.g. a `valid_time` range baked
         into a source file), derive one `age` column from it (its midpoint, usually)
         before calling this, rather than trying to carry that per-row width through.
+
+        `plate_id`, a column name, trusts an existing plate assignment instead of
+        the default (point-in-polygon testing against the Reconstruction Model's
+        static polygons). Some compilations ship a plate id reflecting real domain
+        knowledge partitioning cannot recover -- oceanic crust especially, which a
+        model's static polygons may not cover at all, silently pinning such a point
+        at its present-day position forever. Only rows where this column is
+        non-null and non-zero are overridden; everything else still gets a plate id
+        from partitioning as usual.
 
         `style_js` is the escape hatch, and a supported path rather than a failure:
         a JS module whose default export is `(point, category, api) => {fill, ...}`.
@@ -369,6 +379,8 @@ class View:
         need(lat, "latitude")
         if group is not None:
             need(group, "group")
+        if plate_id is not None:
+            need(plate_id, "plate_id")
 
         # The age, longitude and latitude columns are written by the exporter under
         # fixed payload keys of its own. Carrying them AGAIN as ordinary fields is
@@ -428,6 +440,7 @@ class View:
             "_categories": categories,
             "_frame": prepared,
             "_has_age": age is not None,
+            "_plate_id_field": plate_id,
             "_meta": {k: v for k, v in
                       {"source": source, "doi": doi, "caption": caption}.items()
                       if v},
@@ -451,7 +464,7 @@ class View:
                      lat=_unless(lat, _find_column(columns, LAT_NAMES, None)),
                      group=group, labels=labels, colours=colours,
                      lifespan=None if lifespan == "since" else lifespan,
-                     window=window,
+                     window=window, plate_id=plate_id,
                      highlight=highlight, size=None if size == 3.4 else size,
                      hover=hover or None, label=label, footer=footer,
                      style_js=style_js, source=source, doi=doi, caption=caption,

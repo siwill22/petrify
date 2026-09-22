@@ -129,7 +129,8 @@ class Builder:
         """
         frame = spec["_frame"]
         fields = spec["_fields"]
-        fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"])
+        plate_id_field = spec.get("_plate_id_field")
+        fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"], plate_id_field)
         params = dict(self._base(), fields=[f[0] for f in fields],
                       data=fingerprint, rows=len(frame))
         key = key_for("points", params)
@@ -150,7 +151,8 @@ class Builder:
             # choice a caller should have to make, so it is not exposed.
             transport="rotations",
             fields=fields, categories=spec["_categories"],
-            meta=spec["_meta"] or None, out_dir=out, quiet=self.quiet)
+            meta=spec["_meta"] or None, out_dir=out, quiet=self.quiet,
+            plate_id_field=plate_id_field)
         self.cache.finish(key, params)
         return out
 
@@ -173,7 +175,7 @@ class Builder:
         return path
 
 
-def _frame_fingerprint(frame, fields, has_age):
+def _frame_fingerprint(frame, fields, has_age, plate_id_field=None):
     """A hash of the values that determine the reconstruction, not of the object.
 
     pandas hashing rather than anything bespoke: it is stable across processes and
@@ -184,6 +186,7 @@ def _frame_fingerprint(frame, fields, has_age):
     import pandas as pd
 
     columns = ["Longitude", "Latitude"] + (["Age"] if has_age else []) \
-        + [c for _, c in fields if c in frame.columns]
+        + [c for _, c in fields if c in frame.columns] \
+        + ([plate_id_field] if plate_id_field else [])
     subset = frame[[c for c in dict.fromkeys(columns) if c in frame.columns]]
     return str(pd.util.hash_pandas_object(subset.astype(str), index=False).sum())

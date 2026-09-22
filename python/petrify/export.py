@@ -135,7 +135,8 @@ def export_series(model_name="Merdith2021", start=0, end=250, step=1,
 def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
                   anchor_plate=0, transport="rotations", fields=(), categories=None,
                   meta=None, decimals=2, out_dir="data", filename=None, model=None,
-                  quiet=False, partition_lon_field=None, partition_lat_field=None):
+                  quiet=False, partition_lon_field=None, partition_lat_field=None,
+                  plate_id_field=None):
     """Reconstruct a point dataset and write it as one JSON file.
 
     `transport` may also be 'both', which writes points.json (rotations) alongside
@@ -145,6 +146,10 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
     `partition_lon_field`/`partition_lat_field` pass straight through to
     `points_from_dataframe` -- see its docstring for why a caller would want plate
     assignment tested against different coordinates than the ones drawn.
+
+    `plate_id_field` also passes straight through -- see `points_from_dataframe`'s
+    docstring for why a caller would want to trust an existing plate id over one
+    recovered by partitioning.
     """
     model = model or load_model(model_name)
     times = list(range(start, end + 1, step))
@@ -152,7 +157,8 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
 
     records, unassigned = points_from_dataframe(
         gdf, model, fields=fields,
-        partition_lon_field=partition_lon_field, partition_lat_field=partition_lat_field)
+        partition_lon_field=partition_lon_field, partition_lat_field=partition_lat_field,
+        plate_id_field=plate_id_field)
     if not quiet:
         print("{} points, {} distinct plates".format(
             len(records), len({p["plate_id"] for _, p in records})))

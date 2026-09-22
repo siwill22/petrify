@@ -6,10 +6,12 @@ decides whether to update by reading this file, not by reading the diff.
 
 ## Unreleased
 
-Both additions scoped for Geode's LLSVP/Deep Mantle Upwelling viewer plan
+Three additions scoped for Geode's LLSVP/Deep Mantle Upwelling viewer plan
 (`Geode/docs/plans/llsvp-viewer.md`), which needs a one-sided preview
-window on a point layer and a static (never-reconstructed) raster
-background — neither existed before.
+window on a point layer, a static (never-reconstructed) raster
+background, and — found only once the real LIP dataset was actually
+wired up against a real Reconstruction Model — a way to trust an
+existing plate assignment. None of the three existed before.
 
 - **`View.points()` gains `window=`, meaningful only with
   `lifespan="range"`.** A point that should preview in the run-up to some
@@ -49,6 +51,30 @@ background — neither existed before.
   strips before *any* layer's spec is written, so they were silently lost
   until moved to plain (non-underscore) keys, the same convention
   `label`/`legend_title` already use.
+- **`View.points()` gains `plate_id=`, a column name.** Found by actually
+  running the real `CEED6_LIPCentersAround5Ma.gpml` compilation (31 LIPs)
+  against Torsvik & Cocks (2017): 16 of 31 -- mostly oceanic ones (Broken
+  Ridge, Kerguelen, Ontong Java, Shatsky Rise...) -- fell outside every
+  static polygon and were silently pinned at their present-day position,
+  even though the source file already carries its own `PLATEID1` for
+  every feature. `points_from_dataframe()` always partitioned by
+  point-in-polygon before this and had no way to be told "trust this
+  column instead" -- reasonable for the deposit compilations it was
+  designed around, wrong for a compilation whose plate ids reflect real
+  domain expertise partitioning cannot recover. `plate_id_field` (petrify)
+  /`plate_id` (geode) overrides only rows where the column is non-null and
+  non-zero; partitioning still runs for every row, both to fill in
+  anything the column leaves out and because it is what sets the drawn
+  feature's own `reconstruction_plate_id` for the (unexposed-by-`geode`)
+  `trajectory` transport. An overridden row's `plate_begin_age` is left
+  `None` (always valid), since the age that partitioning found belongs to
+  a different polygon, not the supplied plate. `unassigned`'s count (the
+  "N points fell outside every static polygon" warning) is reduced by
+  however many rows got overridden, so the warning still means what it
+  says. Verified end-to-end on the real dataset: 0 unassigned, all 31
+  plate ids matching the source file's own `PLATEID1` exactly, cache
+  fingerprint extended to include the override column so a rebuild with a
+  different `plate_id=` cannot hit a stale cache entry.
 
 ## v0.15.0
 

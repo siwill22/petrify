@@ -138,7 +138,8 @@ def _partition_plate_ids(features, model, polygons_source):
 
 def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude",
                           age_field="Age", fields=(), polygons="static",
-                          partition_lon_field=None, partition_lat_field=None):
+                          partition_lon_field=None, partition_lat_field=None,
+                          plate_id_field=None):
     """Build pygplates point features with plate IDs assigned by partitioning.
 
     The datasets this is aimed at -- ore deposit compilations, sample sites -- carry
@@ -179,6 +180,20 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
     transport with a split -- two independent feature lists close that off rather than
     relying on every future caller to remember the trap. This module stays ignorant of
     what a "site" or a "pole" is; the names are deliberately generic (see ADR-0001).
+
+    `plate_id_field` trusts an existing plate-id column instead of the partitioned
+    result, for rows where it is not null and not 0. Some compilations (LIPs, ore
+    deposits with expert QA) ship a plate id that reflects real domain knowledge
+    point-in-polygon testing cannot recover -- especially for oceanic crust a
+    model's static polygons may not cover at all, which is exactly when partitioning
+    silently falls back to plate 0 (pinned, never moves). Partitioning still runs
+    for every row regardless, both to fill in rows this column leaves null/0 and
+    because it is what sets the drawn feature's own `reconstruction_plate_id` (see
+    above) -- this only overrides the RECORD read back from it, same as the
+    `partition_lon_field`/`partition_lat_field` split. An overridden row's
+    `plate_begin_age` is left `None` (always valid) rather than keeping whatever
+    partitioning happened to find, since that age describes a different polygon's
+    own begin age, not the supplied plate's.
     """
     features = []
     meta = []
@@ -243,6 +258,25 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
         record["plate_id"] = plate_id
         record["plate_begin_age"] = plate_begin_age
         ordered[index] = (feature, record)
+
+    if plate_id_field is not None:
+        overridden = 0
+        for index, (_, row) in enumerate(gdf.iterrows()):
+            given = row.get(plate_id_field)
+            if given is None or (isinstance(given, float) and math.isnan(given)):
+                continue
+            given = int(given)
+            if given == 0:
+                continue
+            feature, record = ordered[index]
+            was_unassigned = record["plate_id"] == 0
+            record = dict(record)
+            record["plate_id"] = given
+            record["plate_begin_age"] = None
+            ordered[index] = (feature, record)
+            if was_unassigned:
+                overridden += 1
+        unassigned -= overridden
 
     return ordered, unassigned
 
