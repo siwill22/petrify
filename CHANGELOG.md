@@ -4,6 +4,40 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.15.0
+
+Two fixes, both found while Geode built a "Map Orientation" control (an
+oblique, freely-recentreable flat Projection) on top of v0.14.0's paleomag
+poles/GAPWaP path work — neither was reachable before that existed.
+
+- **`PointLayer`'s `connectLive` polyline now breaks at a flat projector's
+  antimeridian seam.** `_drawConnectedLine()` previously stroked a straight
+  line between every pair of consecutive live points with no seam
+  awareness at all, unlike this library's OTHER line-drawing paths
+  (`_drawRing()`, `tracePolyline()`, `PolygonLayer`), which all already
+  route through a projector's `seamSplit()` hook. Fine as long as nothing
+  crossed the antimeridian; a GAPWaP path under an oblique Map Orientation
+  crosses whatever the CURRENT seam is routinely, and drew as a stray line
+  slicing across the whole map. Fixed by giving `_drawConnectedLine()` the
+  same `seam(prev, v) -> [exitPoint, entryPoint]` handling `_drawRing()`
+  already has — not a call to `tracePolyline()` itself, since that helper
+  draws one flat stroke colour per call and this needs to keep varying
+  colour per segment (a style hook's per-point `fill` producing a gradient
+  along the sequence). Covered by a new test with a minimal seam-having
+  mock projector.
+- **The `graphite` Theme's Outline Treatment changed from `'contrast'` to
+  `'shade'`.** `roles.outline` was a pale blue with no relation to
+  `roles.land`'s grey, which is what `'contrast'` treatment draws literally
+  — fine on Themes designed around a hue contrast, but graphite's own
+  description promises "no colour cast at all", and the pale-blue pen
+  visibly broke that promise once anything (VGP poles, a GAPWaP path) was
+  meant to be the only coloured thing on screen. `'shade'` keeps land's own
+  hue/chroma and only borrows `roles.outline`'s LIGHTNESS
+  (`colour.js`'s `withLightnessOf()`), so `roles.outline` was retuned to a
+  value close to land's own (roughly 14 L\* above it) rather than the old
+  saturated blue's — same mechanism already used by every OTHER Theme whose
+  land and pen are meant to read as one hue family.
+
 ## v0.14.0
 
 Three small, independent additions, all for Geode's planned paleomagnetic-poles

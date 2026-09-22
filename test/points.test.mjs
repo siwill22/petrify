@@ -205,6 +205,70 @@ test('connectLive: a non-live point is skipped, not a break in the line', () => 
   assert.equal(segments[0].color, 'rgb(0, 0, 0)');
 });
 
+/**
+ * A flat projector with a seam at +-180 longitude -- the shape every real flat
+ * Projection's own projector has (Plate Carree/Robinson's `FlatProjector`,
+ * Geode's core/flatProjector.ts), reduced to the minimum needed to exercise
+ * `_drawConnectedLine()`'s seam handling: `project()` is a simple (lon, lat)
+ * screen mapping (always visible, no horizon), and `seamSplit(a, b)` breaks
+ * whenever two vectors' longitudes are more than 180 degrees apart -- the
+ * same test a REAL flat projector's antimeridian handling uses.
+ */
+function makeSeamProjector() {
+  const DEG = Math.PI / 180;
+  function lonLat(v) {
+    return { lon: Math.atan2(v[1], v[0]) / DEG, lat: Math.asin(v[2]) / DEG };
+  }
+  function geoVec(lon, lat) {
+    const la = lat * DEG; const lo = lon * DEG; const c = Math.cos(la);
+    return [c * Math.cos(lo), c * Math.sin(lo), Math.sin(la)];
+  }
+  return {
+    project(v) {
+      const { lon, lat } = lonLat(v);
+      return [lon * 2, -lat * 2, 1];
+    },
+    seamSplit(a, b) {
+      const la = lonLat(a); const lb = lonLat(b);
+      if (Math.abs(la.lon - lb.lon) <= 180) return null;
+      const seamLat = (la.lat + lb.lat) / 2;
+      return la.lon > 0
+        ? [geoVec(180, seamLat), geoVec(-180, seamLat)]
+        : [geoVec(-180, seamLat), geoVec(180, seamLat)];
+    },
+  };
+}
+
+test('connectLive: a segment crossing the antimeridian breaks at the seam, not straight across', () => {
+  // 20 degrees apart on the sphere (170 -> -170 the short way round), but a huge jump in
+  // raw longitude -- exactly the case Map Orientation makes common (docs/plans -- Geode's
+  // Map Orientation session: an oblique aspect can put the seam somewhere data crosses
+  // often, not just the antimeridian a dataset happened to avoid).
+  const data = baseData([
+    { lon: 170, lat: 0, plate_id: 0 },
+    { lon: -170, lat: 0, plate_id: 0 },
+  ]);
+  const layer = new PointLayer(data, {
+    spiderfy: false, connectLive: true,
+    style: (p) => ({ fill: `rgb(${p.lon < 0 ? 0 : p.lon}, 0, 0)` }),
+  });
+  layer.setTime(0);
+
+  const { ctx, strokes } = makeCtx();
+  layer.draw(ctx, makeSeamProjector());
+
+  const segments = strokes.filter((s) => s.color && s.color.startsWith('rgb('));
+  // One straight segment would be a single stroke spanning the whole map (170 to -170 in
+  // screen x, a jump of 680 units under this projector's *2 scale). Seam-broken, it is TWO
+  // strokes instead, each running from a real point to its own nearby map edge.
+  assert.equal(segments.length, 2, 'expected the seam crossing to produce two strokes, not one straight line');
+  for (const s of segments) {
+    const xs = s.path.filter((p) => p[0] === 'M' || p[0] === 'L').map((p) => p[1]);
+    const span = Math.max(...xs) - Math.min(...xs);
+    assert.ok(span < 100, `each half of a seam-broken segment should be short, got span ${span}`);
+  }
+});
+
 test('connectLive: breaks at the horizon, unlike a skipped dead point', () => {
   // Point 1 sits behind the camera (lon=180 with this projector's +x-facing camera) --
   // live, but never given a screen position at all.

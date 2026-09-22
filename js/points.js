@@ -529,7 +529,7 @@ export class PointLayer {
     }
 
     // The connected line, under every ring and symbol -- same reasoning as leader lines.
-    if (this.options.connectLive) this._drawConnectedLine(ctx, screen);
+    if (this.options.connectLive) this._drawConnectedLine(ctx, screen, projector);
 
     ctx.lineWidth = keylineWidth;
     ctx.strokeStyle = keyline;
@@ -580,11 +580,24 @@ export class PointLayer {
    * where a still-live point has no screen position (behind the horizon), the same
    * break condition every other vector layer here uses -- "not live" and "not visible"
    * are different reasons and only one of them means "there is a gap in the path".
+   *
+   * Seam-aware on a flat projector, same reasoning as `_drawRing()`'s own use of
+   * `tracePolyline`'s `seam` option: a whole-world flat map is cut open somewhere, and a
+   * segment between two consecutive live points can be a single short step on the sphere
+   * but land on opposite sides of that cut once projected -- most visibly once Map
+   * Orientation (an oblique aspect) moves the cut somewhere the data crosses often, rather
+   * than the antimeridian a dataset was curated to avoid. Not implemented by calling
+   * `tracePolyline()` itself: that helper draws one flat stroke colour per call, and this
+   * needs `this._style[prev].fill` to vary per segment (a caller's style hook produces a
+   * gradient along the sequence) -- so the seam break is inlined here instead, walking the
+   * same `seam(prev, v) -> [exitPoint, entryPoint]` contract projector.seamSplit() defines.
    */
-  _drawConnectedLine(ctx, screen) {
+  _drawConnectedLine(ctx, screen, projector) {
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineWidth = this.options.connectWidth;
+
+    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
 
     let prev = -1;
     for (let i = 0; i < this.count; i++) {
@@ -597,10 +610,32 @@ export class PointLayer {
         // The earlier vertex's own resolved fill -- a per-point style hook returning a
         // different colour along the sequence produces a gradient with no extra API.
         ctx.strokeStyle = this._style[prev].fill;
-        ctx.beginPath();
-        ctx.moveTo(a[0], a[1]);
-        ctx.lineTo(p[0], p[1]);
-        ctx.stroke();
+
+        const cut = seam && seam(
+          [this._xyz[prev * 3], this._xyz[prev * 3 + 1], this._xyz[prev * 3 + 2]],
+          [this._xyz[i * 3], this._xyz[i * 3 + 1], this._xyz[i * 3 + 2]],
+        );
+        if (cut) {
+          const out = projector.project(cut[0]);
+          const back = projector.project(cut[1]);
+          if (out) {
+            ctx.beginPath();
+            ctx.moveTo(a[0], a[1]);
+            ctx.lineTo(out[0], out[1]);
+            ctx.stroke();
+          }
+          if (back) {
+            ctx.beginPath();
+            ctx.moveTo(back[0], back[1]);
+            ctx.lineTo(p[0], p[1]);
+            ctx.stroke();
+          }
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(a[0], a[1]);
+          ctx.lineTo(p[0], p[1]);
+          ctx.stroke();
+        }
       }
       prev = i;
     }

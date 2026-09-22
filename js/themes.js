@@ -111,12 +111,21 @@ export const THEMES = [
     lightness: 'dark',
     temperature: 'neutral',
     weight: 1,
-    outline: 'contrast',
+    // 'shade', not 'contrast': the pen reads as land's own grey, only a little
+    // lighter, rather than a distinct hue standing out against it -- 'contrast'
+    // (the original choice here) pointed roles.outline at a pale blue with no
+    // relation to land's colour at all, which read as far too loud a line
+    // around continents whose whole point was to stay out of the way of a
+    // painted field on top of them (Geode's paleomagnetic-poles viewers).
+    outline: 'shade',
     roles: {
       page: '#0c0c0d',
       water: '#1a1b1d',
       land: '#4a4d51',
-      outline: '#adcefe',
+      // Only its LIGHTNESS is used under 'shade' (see colour.js's
+      // withLightnessOf()) -- land's own hue/chroma at this lightness, about
+      // 14 L* above land's ~33, is "outlined", not "highlighted".
+      outline: '#6c6f73',
       accentHot: '#82494e',
       accentWarm: '#a3857a',
       accentBright: '#e3deb4',
