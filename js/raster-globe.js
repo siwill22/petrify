@@ -27,10 +27,12 @@
  * which the vendored PolygonLayer already treats as "behaves like a
  * polyline", i.e. still fills, just without horizon-specific culling. A ring
  * or line that straddles the antimeridian relative to the current central
- * meridian is a SEPARATE problem from the horizon -- see
- * ./robinson.js's `meridianCrossing()`/`wrapLonDelta()`, which a page's own
- * overlay code is expected to use for anything long/large enough to actually
- * cross it; `projectDelta()` below is that seam handling's other half.)
+ * meridian is a SEPARATE problem from the horizon: `projector` exposes
+ * `mapHalfWidth`/`centreLon`/`projectDelta()` for exactly this, which
+ * `polygons.js` uses together with `robinsonSeams.js` to split a seam-crossing
+ * ring into fillable pieces itself -- not a page's own responsibility any more,
+ * see `Geode/docs/plans/llsvp-viewer.md` for why this moved here instead of
+ * staying a per-page workaround.)
  */
 
 import {
@@ -531,6 +533,24 @@ export class RasterGlobe {
         get cx() { return globe.cx; },
         get cy() { return globe.cy; },
         get radius() { return globe.radius; },
+        // The three below are how `polygons.js` detects and correctly splits a ring
+        // that crosses Robinson's own seam (robinsonSeams.js); undefined for every
+        // other projection, which reads as "cannot split, fall back" the same way
+        // `axis` reads as "no horizon to close against" for Robinson itself.
+        //
+        // `mapHalfWidth` is the map's own half-width in these same screen pixels, at
+        // the equator (Robinson's widest latitude) -- which, in this class's own
+        // scaling convention (`_robinsonR = radius / (ROBINSON_XSCALE * PI)`, set in
+        // _resize()), reduces to exactly `radius`: substitute it into
+        // `projectVec3`'s `x * this._robinsonR` at lonDelta = PI, xf = 1 and the
+        // ROBINSON_XSCALE/PI factors cancel.
+        get mapHalfWidth() {
+          return globe.projection === 'robinson' ? globe.radius : undefined;
+        },
+        get centreLon() {
+          return globe.projection === 'robinson' ? (globe.state.lon ?? 0) : undefined;
+        },
+        projectDelta: (dLon, lat) => globe.projectDelta(dLon, lat),
       };
     }
     return this._projector;

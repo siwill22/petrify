@@ -292,8 +292,12 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
            README.format(title=view.title, caption=view.caption_text or ""))
 
     for name in sorted(os.listdir(JS_DIR)):
-        if name.endswith((".js", ".css")):
-            _copy(os.path.join(JS_DIR, name), os.path.join(lib_dir, name))
+        src = os.path.join(JS_DIR, name)
+        # Files: only .js/.css. Directories are copied whole -- e.g. vendor/d3-geo-clip/,
+        # a vendored third-party subtree `robinsonSeams.js` imports from, which a name-
+        # extension filter alone would silently drop from the exported artifact.
+        if name.endswith((".js", ".css")) or os.path.isdir(src):
+            _copy(src, os.path.join(lib_dir, name))
 
     if not quiet:
         _report(out_dir)

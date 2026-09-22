@@ -12,10 +12,11 @@
  * line and wrong for a filled shape: an open path closes itself with a straight chord, so
  * a continent straddling the limb would fill as a lens across the globe.
  *
- * It IS used for the one case that cannot be filled at all -- a ring straddling a flat
- * map's seam, which is outlined instead. That is not an exception to the reasoning above
- * so much as a consequence of it: where a closed path is guaranteed wrong, a line is the
- * honest thing to draw, and then tracePolyline is exactly the right tool.
+ * It IS still used for a ring straddling a flat map's seam, but only as the fallback for a
+ * projector that cannot properly split one -- see the seam note in the ring loop below,
+ * and `robinsonSeams.js` for the projector capability that avoids it. Where that fallback
+ * does apply, a closed path is guaranteed wrong (it sweeps back across the whole map), so a
+ * line is the honest thing to draw instead, and tracePolyline is exactly the right tool.
  *
  * Instead, a vertex behind the horizon is CLAMPED onto the limb -- the component of the
  * vertex perpendicular to the view axis, nudged just inside the visible side. The ring
@@ -26,8 +27,9 @@
  * outlines only, since there is no way to know where the limb is.
  */
 
-import { lonLatToVec3 } from './sphere.js';
+import { lonLatToVec3, vec3ToLonLat } from './sphere.js';
 import { quatFromPoleAngle, quatSlerp, quatToMat3 } from './rotations.js';
+import { splitRingAtSeam } from './robinsonSeams.js';
 import { tracePolyline } from './polyline.js';
 
 // How far inside the horizon a clamped vertex is placed. Large enough to survive float
@@ -199,6 +201,15 @@ export class PolygonLayer {
     // edge instead of a horizon. See the seam note in the ring loop below.
     const hasSeamSplit = !!projector.seamSplit;
     const halfWidth = projector.mapHalfWidth ?? 0;
+    // A flat map that can properly split a ring at its own seam -- `centreLon` (the
+    // pannable central meridian, in degrees) and `projectDelta` (project an
+    // already-seam-relative longitude DELTA, not an absolute longitude to be
+    // re-derived and re-wrapped) alongside `mapHalfWidth`. `splitRingAtSeam` itself
+    // knows nothing about any particular projector; this is what lets a future flat
+    // projection reuse it just by exposing the same three.
+    const canSplitRings = halfWidth > 0
+      && typeof projector.projectDelta === 'function'
+      && typeof projector.centreLon === 'number';
     const time = this.currentTime;
     const v = this._v;
     const c = this._c;
@@ -247,18 +258,38 @@ export class PolygonLayer {
       if (buf.length < 6) continue;              // fewer than 3 points is not a ring
 
       /*
-       * A ring straddling a flat map's seam cannot be filled: its vertices are
-       * split between the two edges, so any single closed path through them
-       * sweeps back across the whole map and fills the ocean. Cutting it into
-       * per-side pieces and closing each along the map boundary is a real job
-       * (and a different one from clamping to a limb) that this layer does not
-       * do yet.
+       * A ring straddling a flat map's seam cannot be filled by the ordinary path
+       * above: its vertices are split between the two edges, so the closed path
+       * built from `buf` sweeps back across the whole map instead of following the
+       * seam. A projector that can properly split one (`canSplitRings`) gets the
+       * real fix: convert the ring back to lon/lat, split it into per-side pieces
+       * with `splitRingAtSeam` (`robinsonSeams.js`), and project + fill each piece
+       * independently -- the "real job" the comment this replaced said this layer
+       * did not do yet.
        *
-       * So it is outlined instead -- drawn into a separate stroke-only path,
-       * broken properly at the seam by tracePolyline. Continents that do not
-       * touch the seam are unaffected and still fill. Showing a correct outline
-       * beats both filling it wrongly and dropping it silently.
+       * Without that capability, it is outlined instead of filled -- drawn into a
+       * separate stroke-only path, broken properly at the seam by tracePolyline.
+       * Continents that do not touch the seam are unaffected either way.
        */
+      if (crossesSeam && canSplitRings) {
+        const lonLat = [];
+        for (let k = 0; k < ring.count; k++) {
+          const i = (ring.offset + k) * 3;
+          lonLat.push(vec3ToLonLat([this.xyz[i], this.xyz[i + 1], this.xyz[i + 2]]));
+        }
+        for (const piece of splitRingAtSeam(lonLat, projector.centreLon)) {
+          if (piece.length < 3) continue;
+          const pieceBuf = [];
+          for (const [dLon, lat] of piece) {
+            const p = projector.projectDelta(dLon, lat);
+            pieceBuf.push(p[0], p[1]);
+          }
+          if (pieceBuf.length < 6) continue;
+          if (signedArea(pieceBuf) < 0) reverseRing(pieceBuf);
+          out.fillable.push(pieceBuf);
+        }
+        continue;
+      }
       if (crossesSeam && hasSeamSplit) {
         out.seam.push(ring);
         continue;

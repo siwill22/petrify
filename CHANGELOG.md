@@ -6,6 +6,62 @@ decides whether to update by reading this file, not by reading the diff.
 
 ## Unreleased
 
+**Fix: `PolygonLayer` under Robinson no longer draws stray lines for a ring
+crossing the seam.** Found while building the LLSVP viewer (`.continents()`
+alone, Robinson, any centre) — a ring crossing the antimeridian relative to
+the current central meridian used to sweep a straight line back across the
+whole map instead of wrapping. Root cause, not a guess: `polygons.js`'s
+seam-crossing detection/handling (`hasSeamSplit`/`seamSplit`/`mapHalfWidth`)
+was written against `js/robinson.js`'s standalone `Robinson` projector class
+— which nothing in this codebase actually instantiates (`grep -rn "new
+Robinson("` returns nothing). `js/raster-globe.js`'s own `.projector`
+(what every real `geode`-built page actually uses) never implemented that
+contract at all, so the seam path was silently dead code and every ring,
+seam-crossing or not, was filled by the naive closed-path loop.
+
+The proper fix, not a stroke-only fallback: ported `StoryMaps/shared/js/
+robinsonSeams.js` (a small adapter) and its vendored `d3-geo-clip` subtree
+(the actual antimeridian clip-and-rejoin algorithm, ISC-licensed, unmodified
+from `d3-geo` v3.1.1 apart from two `d3-array` imports inlined to stay
+dependency-free) into `js/robinsonSeams.js` and `js/vendor/d3-geo-clip/`.
+`StoryMaps/lips` and `detrital-zircons` had already solved this exact
+problem, per-page, with the same module — this generalises it into
+`polygons.js` itself instead of leaving it a third page's copy-paste, which
+is what `Geode/docs/plans/python-first-viewer-api.md`'s own staging notes
+say never happened when Robinson moved into this repository
+(`robinsonSeams.js` "did not move, because it pulls a vendored d3-geo
+subtree with it").
+
+`polygons.js`'s `projectRings()` now takes a `canSplitRings` path
+(`projector.centreLon`/`mapHalfWidth`/`projectDelta`, all optional) that
+converts a seam-crossing ring back to lon/lat, splits it into fillable
+pieces with `splitRingAtSeam`, and fills each piece independently — ahead of
+the old stroke-only fallback, which stays in place for a projector that
+only implements the older contract. `raster-globe.js`'s `.projector` getter
+now exposes all three for Robinson (`undefined` otherwise, same convention
+`axis` already uses); `mapHalfWidth` reduces to exactly `radius` in this
+class's own `_robinsonR` scaling convention, worked out algebraically and
+left as a comment rather than a magic number.
+
+Also fixed in the same pass: `artifact.py`'s JS bundling only ever copied
+top-level `.js`/`.css` files into an exported page's `lib/` — silently
+dropping the new vendored `vendor/d3-geo-clip/` subdirectory from every
+export. Now copies directories too.
+
+Verified against the real bug: `TorsvikCocks2017` continents under
+Robinson, centred at `(110, 0)` (the LLSVP viewer's own choice) and `(0, 0)`
+— re-screenshotted with Playwright, stray lines gone at both. The ported
+module's output checked byte-for-byte against the original StoryMaps
+`robinsonSeams.js` on the real "East Antarctica" ring (the one its own pole-
+vertex-dropping fix names by name): identical. One residual, pre-existing
+characteristic, not a regression — a ring that wraps close to a pole (East
+Antarctica) still projects somewhat flattened along the map's bottom edge,
+because the vendored clip's rejoin step legitimately produces a boundary
+that follows the frame there, and this codebase's straight-line-between-
+points rendering doesn't know to curve along it. The *original* StoryMaps
+module produces byte-identical output for that ring, so this is not
+something the port introduced or regressed.
+
 Three additions scoped for Geode's LLSVP/Deep Mantle Upwelling viewer plan
 (`Geode/docs/plans/llsvp-viewer.md`), which needs a one-sided preview
 window on a point layer, a static (never-reconstructed) raster
