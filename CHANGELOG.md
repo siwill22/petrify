@@ -4,11 +4,10 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
-## Unreleased
+## v0.14.0
 
-Three small, independent additions, staged here for review before a version
-number is chosen and this gets tagged per ADR-0001 — this entry is for the
-reviewer, not (yet) a release note.
+Three small, independent additions, all for Geode's planned paleomagnetic-poles
+feature (`docs/adr/0029`/`paleomagnetic-poles.md` in that repo).
 
 - **`points_from_dataframe(partition_lon_field=, partition_lat_field=)`.**
   Every point dataset this library has served so far needed exactly one
