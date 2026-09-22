@@ -31,6 +31,7 @@ IDEMPOTENT = {"theme", "caption", "playback"}
 # would have written.
 POSITIONAL = {
     "points": ["frame"],
+    "background": ["image"],
     "theme": ["theme_id"],
     "caption": ["text"],
     "playback": ["myr_per_second"],

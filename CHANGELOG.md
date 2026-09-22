@@ -4,6 +4,52 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## Unreleased
+
+Both additions scoped for Geode's LLSVP/Deep Mantle Upwelling viewer plan
+(`Geode/docs/plans/llsvp-viewer.md`), which needs a one-sided preview
+window on a point layer and a static (never-reconstructed) raster
+background — neither existed before.
+
+- **`View.points()` gains `window=`, meaningful only with
+  `lifespan="range"`.** A point that should preview in the run-up to some
+  later event and then disappear (not persist — that's `lifespan="since"`)
+  needs `from`/`to` bounds, which `points.js`'s `range` lifespan already
+  reads, but nothing on the Python side could set them; `age`/`lon`/`lat`
+  were the only column mappings `.points()` exposed. Rather than a general
+  `from_field`/`to_field` column-mapping addition, `window` computes
+  `from = age + window, to = age` internally from the single `age` column
+  already being carried — smaller, and fits the actual recurring shape of
+  this need (a single global width, not a per-row one) better than generic
+  column mapping would. Carried through via the same `fields`-passthrough
+  mechanism `hover`/`group` already use, under the two literal keys
+  `points.js` reads — no changes needed in `petrify/points.py` or any JS
+  at all. Verified directly (no pygplates needed — `view.py` has none of
+  that as a module-level dependency): `from`/`to` compute correctly,
+  `window=` without `lifespan="range"` raises, `lifespan="range"` without
+  `window` is unchanged from today's behaviour.
+- **New `View.background(image, ...)` verb**, and a `"background"` recipe
+  key alongside `layers[]` (not inside it — the base texture is set once
+  on `RasterGlobe`, not drawn in overlay draw order). `js/raster-globe.js`
+  already renders a static, non-reconstructed raster — every `geode`-built
+  page instantiates it, but nothing on the Python/recipe side has ever
+  called its `loadTextures()`; the `ocean` disc has stood in for every
+  page so far. A single-frame manifest (`{"frames": [{"age": 0, "file":
+  ...}]}`) is the degenerate case of the paleogeography series
+  `loadTextures()` already handles — checked `_renderRaster()` directly:
+  with one frame, `span` is `0` and `mix` is forced to `0`, so this needed
+  no shader or cross-fade changes. `.background()` replaces the default
+  `ocean` layer rather than stacking with it, since both answer the same
+  "what gives the globe a body" question. Verified end-to-end through a
+  real `View.export()` (image copied, manifest written in the exact shape
+  `loadTextures()` expects, `ocean` absent from `layers[]`,
+  `source`/`doi`/`caption` surviving into `recipe["background"]`) —
+  caught and fixed one bug in the process: those three arguments were
+  first stored under a `_meta` key, which `artifact.py`'s `_public()`
+  strips before *any* layer's spec is written, so they were silently lost
+  until moved to plain (non-underscore) keys, the same convention
+  `label`/`legend_title` already use.
+
 ## v0.15.0
 
 Two fixes, both found while Geode built a "Map Orientation" control (an

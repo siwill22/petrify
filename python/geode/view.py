@@ -152,6 +152,7 @@ class View:
         self.play_rate = None
 
         self._layers = []
+        self._background = None
         self._charts = []
         self._distance_heatmap = None
         self._log = []
@@ -236,6 +237,43 @@ class View:
 
     # -- the standard layers ------------------------------------------------
 
+    def background(self, image, label=None, legend_title=None, source=None,
+                   doi=None, caption=None):
+        """A static raster painted under every other layer, never reconstructed.
+
+        Unlike `.points()`/`.boundaries()`, nothing here is derived from a
+        DataFrame or run through pygplates -- `image` is a path to a pre-rendered,
+        already colour-mapped PNG. This verb does no numeric colour-mapping of its
+        own: bake whatever colour ramp the raster needs into the image itself
+        before calling this (a `Variable`'s ramp is a scientific decision a Theme
+        must never touch -- the same rule that keeps a scientific colormap outside
+        `.theme()`'s reach applies here).
+
+        Replaces the default ocean disc rather than sitting alongside it -- both
+        are answers to the same "what gives the globe a body" question, and a
+        raster big enough to cover the sphere makes the flat fallback pointless
+        underneath it.
+        """
+        self._layers = [lyr for lyr in self._layers if lyr["kind"] != "ocean"]
+        self._background = {
+            "kind": "raster",
+            "_image_path": os.path.abspath(image),
+            "label": label,
+            "legend": {"title": legend_title} if legend_title else None,
+            # Not `_meta`: unlike `.points()`, there is no petrify export call here
+            # to consume an underscore-prefixed key before `_public()` strips it --
+            # these have to survive as ordinary fields to reach `recipe["background"]`
+            # at all.
+            "source": source,
+            "doi": doi,
+            "caption": caption,
+        }
+        self._background = {k: v for k, v in self._background.items() if v is not None}
+        self._record("background", image=image, label=label,
+                     legend_title=legend_title, source=source, doi=doi,
+                     caption=caption)
+        return self
+
     def continents(self, which="continents", tolerance=0.02, alpha=0.62,
                    line_width=0.7):
         """Reconstructed continent polygons.
@@ -280,7 +318,7 @@ class View:
     # -- the main verb ------------------------------------------------------
 
     def points(self, df, age=None, lon=None, lat=None, group=None, labels=None,
-               colours=None, lifespan="since", highlight=None, size=3.4,
+               colours=None, lifespan="since", window=None, highlight=None, size=3.4,
                keyline_alpha=0.55, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
                legend_title=None, name=None):
@@ -294,11 +332,28 @@ class View:
         of column -> label, or column -> {label, unit, error, errorUnit} where a
         measurement and its uncertainty belong on one line.
 
+        `window`, with `lifespan="range"`, is Myr *before* `age` that a point stays
+        visible -- e.g. a preview marker that should appear only in the run-up to
+        some later event, not persist after it (that is what `lifespan="since"` is
+        for). Internally this is `from = age + window, to = age`, the `from`/`to`
+        pair the renderer's `range` lifespan already reads -- computed here from the
+        single `age` column already being carried, so the caller never has to add
+        their own `from`/`to` columns. A global width, not per-row: if a dataset
+        already encodes its own per-feature window (e.g. a `valid_time` range baked
+        into a source file), derive one `age` column from it (its midpoint, usually)
+        before calling this, rather than trying to carry that per-row width through.
+
         `style_js` is the escape hatch, and a supported path rather than a failure:
         a JS module whose default export is `(point, category, api) => {fill, ...}`.
         Pages whose symbols are genuinely bespoke -- pie glyphs, say -- belong there
         rather than in a Display Rule nobody else could use.
         """
+        if window is not None and lifespan != "range":
+            raise ValueError(
+                "window= only means something with lifespan='range' "
+                "(got lifespan={!r})".format(lifespan))
+        if lifespan == "range" and window is not None and age is None:
+            raise KeyError("window= needs an age= column to measure the range from")
         columns = set(df.columns)
 
         def need(col, what):
@@ -337,6 +392,16 @@ class View:
         prepared = df.rename(columns={lon: "Longitude", lat: "Latitude"})
         if age is not None:
             prepared = prepared.rename(columns={age: "Age"})
+
+        if lifespan == "range" and window is not None:
+            # `from`/`to` are what the renderer's `range` lifespan actually reads
+            # (points.js: `to <= time <= from`) -- carried through as ordinary named
+            # fields, same mechanism as `hover`/`group`, just under the two literal
+            # keys the renderer already knows. No petrify change needed below this.
+            prepared = prepared.copy()
+            prepared["_geode_range_from"] = prepared["Age"] + float(window)
+            prepared["_geode_range_to"] = prepared["Age"]
+            fields = fields + [("from", "_geode_range_from"), ("to", "_geode_range_to")]
 
         categories = None
         if group is not None:
@@ -386,6 +451,7 @@ class View:
                      lat=_unless(lat, _find_column(columns, LAT_NAMES, None)),
                      group=group, labels=labels, colours=colours,
                      lifespan=None if lifespan == "since" else lifespan,
+                     window=window,
                      highlight=highlight, size=None if size == 3.4 else size,
                      hover=hover or None, label=label, footer=footer,
                      style_js=style_js, source=source, doi=doi, caption=caption,

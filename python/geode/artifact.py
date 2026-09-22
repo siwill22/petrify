@@ -153,6 +153,28 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
         else:
             raise ValueError("cannot export layer kind {!r}".format(kind))
 
+    # -- background raster ----------------------------------------------------
+
+    # Not a `layers[]` entry: it is the globe's base texture, set once on the
+    # RasterGlobe host rather than drawn as an overlay in draw order, so it gets
+    # its own top-level recipe key the same way `charts`/`distanceHeatmap` do.
+    background = None
+    if view._background:
+        bg = view._background
+        src = bg["_image_path"]
+        ext = os.path.splitext(src)[1] or ".png"
+        image_name = "background{}".format(ext)
+        _copy(src, os.path.join(data_dir, image_name))
+        manifest_name = "background.json"
+        # A single-frame manifest in RasterGlobe's own format (js/raster-globe.js's
+        # `loadTextures()`) -- a static raster is the degenerate case of a
+        # paleogeography series, not a different mechanism, so it reuses that
+        # loader unchanged rather than needing a second texture-loading path.
+        _write(os.path.join(data_dir, manifest_name),
+               json.dumps({"frames": [{"age": 0, "file": image_name}]}))
+        background = _public(bg)
+        background["url"] = "data/{}".format(manifest_name)
+
     # -- charts --------------------------------------------------------------
 
     sources = []
@@ -217,6 +239,8 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
                             "sources": sources}
     if heatmap:
         recipe["distanceHeatmap"] = heatmap
+    if background:
+        recipe["background"] = background
 
     # -- provenance ----------------------------------------------------------
 

@@ -288,6 +288,15 @@ export async function mountExplorer(recipe, root) {
   const globe = new RasterGlobe(dom.globeEl,
     { projection: recipe.projection ?? 'orthographic' });
 
+  // `recipe.background` is the globe's own base texture (a single-frame case of the
+  // same paleogeography-series manifest RasterGlobe already knows how to load), not a
+  // layer in draw order -- kicked off here, alongside the layer loads below, rather
+  // than awaited immediately, so an image fetch never blocks vector layers from
+  // starting theirs.
+  const backgroundLoad = recipe.background
+    ? globe.loadTextures(recipe.background.url)
+    : Promise.resolve();
+
   /* ---- layers -------------------------------------------------------------- */
 
   const specs = recipe.layers ?? [];
@@ -297,9 +306,12 @@ export async function mountExplorer(recipe, root) {
   for (const spec of specs) {
     if (spec.kind === 'points') inkBooks.set(spec, makeInkBook(spec, theme, resolve));
   }
-  const loaded = await Promise.all(specs.map((spec) => loadLayer(spec, {
-    theme, resolve, pen, getTime, inks: inkBooks.get(spec),
-  })));
+  const [loaded] = await Promise.all([
+    Promise.all(specs.map((spec) => loadLayer(spec, {
+      theme, resolve, pen, getTime, inks: inkBooks.get(spec),
+    }))),
+    backgroundLoad,
+  ]);
 
   const layers = {};
   specs.forEach((spec, i) => { layers[spec.id ?? spec.kind] = loaded[i]; });
