@@ -4,6 +4,50 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## Unreleased
+
+Three small, independent additions, staged here for review before a version
+number is chosen and this gets tagged per ADR-0001 — this entry is for the
+reviewer, not (yet) a release note.
+
+- **`points_from_dataframe(partition_lon_field=, partition_lat_field=)`.**
+  Every point dataset this library has served so far needed exactly one
+  coordinate pair, used both for the drawn position and for the
+  point-in-polygon plate assignment. A paleomagnetic pole needs two: the
+  pole is what gets drawn, but the plate it moves with is decided by where
+  its sample site sits, not by the pole position (Geode's
+  `docs/adr/0029`/`paleomagnetic-poles.md`). Both default to `None`
+  ("same as `lon_field`/`lat_field`"), verified identical to today's
+  behaviour against a from-scratch pytest suite — this repo carried no
+  Python tests before now. When given, a second, throwaway partition
+  recovers `plate_id`/`plate_begin_age` for the record only; the geometry
+  `pygplates.Feature`s built from `lon_field`/`lat_field` — and their own
+  `reconstruction_plate_id`, which is what `'trajectory'` transport
+  actually reconstructs from — are completely untouched, so a caller
+  combining a split with `'trajectory'` still reconstructs the drawn
+  point, never the partition anchor. Names are deliberately `partition_*`,
+  not `site_*`/`pole_*`: this module still does not know what a
+  paleomagnetic pole is (ADR-0001).
+- **A geographic-circle draw primitive on `PointLayer`.** A style hook can
+  now return `ringRadiusDeg` (plus `ringColor`/`ringFill`) to draw a true
+  angular-radius circle around a point — e.g. a pole's A95 — sampled on
+  the sphere with the same `tangentFrame`/`travel` great-circle math the
+  rest of this library already uses for velocity arrows, and projected
+  point by point through `tracePolyline` so it foreshortens near the
+  horizon (and breaks cleanly at a flat projection's seam) instead of
+  drawing as a flat screen-space ellipse. Absent `ringRadiusDeg`, a point
+  draws exactly as before.
+- **`connectLive` on `PointLayer`.** Strokes a polyline through the live
+  points, in their original input order, instead of (or alongside) each
+  one's own symbol — for a sampled path or a time-ordered sequence where
+  the order itself is the point. Each segment takes its colour from the
+  earlier vertex's resolved `fill`, so a style hook returning a different
+  colour per point produces a gradient along the line for free, with no
+  separate colour-ramp API. A point that is not currently live is skipped
+  rather than breaking the line; the pen only lifts where a live point has
+  no screen position at all (behind the horizon) — the same distinction
+  `isLive()` and the horizon already draw everywhere else in this file.
+
 ## v0.11.0
 
 The drawer could already say how to set up the environment and show exactly what

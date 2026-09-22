@@ -29,9 +29,10 @@
  * both paths are normalised to the same `_live` flags here.
  */
 
-import { lonLatToVec3 } from './sphere.js';
+import { DEG, lonLatToVec3, vec3ToLonLat, tangentFrame, travel } from './sphere.js';
 import { fetchMaybeGzippedJSON } from './gzipFetch.js';
 import { quatFromPoleAngle, quatSlerp, quatToMat3, mat3Apply } from './rotations.js';
+import { tracePolyline } from './polyline.js';
 
 export const DEFAULT_SYMBOLS = {
   circle: 'circle',
@@ -75,6 +76,22 @@ export const DEFAULT_OPTIONS = {
 
   fill: 'rgba(200, 214, 230, 0.9)',
 
+  /*
+   * ---- Angular-radius ring --------------------------------------------------------
+   *
+   * A style hook can return `ringRadiusDeg` (e.g. a confidence radius like a
+   * paleomagnetic pole's A95) to draw a TRUE geographic circle of that angular radius
+   * around the point, in addition to its symbol. Sampled on the sphere and projected
+   * point by point -- not a flat screen-space ellipse -- so it foreshortens correctly
+   * near the globe's horizon. `ringColor`/`ringFill` are also style-hook overridable;
+   * these two are the fallback when a hook sets `ringRadiusDeg` but not a colour.
+   * Absent `ringRadiusDeg` (the default for every point unless a hook says otherwise),
+   * nothing changes from a symbol-only draw.
+   */
+  ringColor: 'rgba(232, 240, 248, 0.65)',
+  ringWidth: 1.2,
+  ringSegments: 72,   // 5 deg apart -- smooth at any radius without a per-style knob
+
   // Fitts's law: a 3.4 px symbol is impossible to hit precisely, so the target is bigger
   // than the mark.
   hitRadius: 9,
@@ -104,6 +121,22 @@ export const DEFAULT_OPTIONS = {
   spiderfyDuration: 180,       // ms, ease-out
   leaderStroke: 'rgba(232, 240, 248, 0.35)',
   leaderWidth: 0.8,
+
+  /*
+   * ---- Connected line -------------------------------------------------------------
+   *
+   * `connectLive: true` strokes a polyline through the live points, in their original
+   * input order, instead of (or alongside) drawing each as an independent symbol --
+   * e.g. a sampled path or a time-ordered traverse, where the sequence itself is the
+   * thing being shown. Points that are not currently live are skipped (the line threads
+   * through whichever points ARE live this frame); the pen only lifts where a live
+   * point has no screen position at all (behind the horizon). Each segment is stroked
+   * in the colour of its EARLIER vertex's resolved `fill` (a style hook returning a
+   * different colour per point produces a gradient along the line for free, with no
+   * separate colour-ramp API needed).
+   */
+  connectLive: false,
+  connectWidth: 1.5,
 
   // Layout constants, after Leaflet.MarkerCluster but about two thirds the size, since
   // these symbols are ~3.4 px rather than 25 px map pins.
@@ -389,12 +422,15 @@ export class PointLayer {
    * `options.style(point, category, defaults)` is the escape hatch for a consumer whose
    * palette is a property of its page rather than of the data -- which is the common case.
    * Colours do not belong in the exported JSON, because rebuilding the data to restyle a
-   * map would be the wrong seam.
+   * map would be the wrong seam. The same hook can also return `ringRadiusDeg` (plus
+   * optionally `ringColor`/`ringFill`/`connect` -- see `draw()`) to opt a point into the
+   * angular-radius ring or connected-line draw modes; omitted, both are inert.
    */
   restyle() {
     const custom = this.options.style;
     const defaults = { symbol: 'circle', fill: this.options.fill,
-                       size: this.options.size };
+                       size: this.options.size,
+                       ringColor: this.options.ringColor, ringWidth: this.options.ringWidth };
 
     this._style = this.points.map((p) => {
       const cat = this.categories[p.type] || {};
@@ -402,6 +438,8 @@ export class PointLayer {
         symbol: cat.symbol || defaults.symbol,
         fill: cat.fill || defaults.fill,
         size: cat.size ?? defaults.size,
+        ringColor: defaults.ringColor,
+        ringWidth: defaults.ringWidth,
       };
       if (!custom) return base;
       // Skip undefined so a hook that only sets `fill`, or that returns nothing for an
@@ -490,6 +528,9 @@ export class PointLayer {
       ctx.stroke();
     }
 
+    // The connected line, under every ring and symbol -- same reasoning as leader lines.
+    if (this.options.connectLive) this._drawConnectedLine(ctx, screen);
+
     ctx.lineWidth = keylineWidth;
     ctx.strokeStyle = keyline;
 
@@ -497,6 +538,11 @@ export class PointLayer {
       const i = visible[k];
       const p = screen[i];
       const style = this._style[i];
+
+      // The ring sits under the symbol it surrounds -- a solid mark reads on top of its
+      // own translucent confidence circle, not the other way round.
+      if (style.ringRadiusDeg) this._drawRing(ctx, projector, i, style);
+
       ctx.fillStyle = style.fill;
       ctx.beginPath();
       symbolPath(ctx, style.symbol, p[0], p[1], style.size);
@@ -522,6 +568,100 @@ export class PointLayer {
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+
+  /**
+   * Stroke a polyline through the live points, in their original input order.
+   *
+   * A point that is not currently live is simply skipped -- the line threads through
+   * whichever points ARE live this frame, exactly the live set every other draw mode
+   * already reads from `_live`, not a raw run of adjacent indices. The pen lifts only
+   * where a still-live point has no screen position (behind the horizon), the same
+   * break condition every other vector layer here uses -- "not live" and "not visible"
+   * are different reasons and only one of them means "there is a gap in the path".
+   */
+  _drawConnectedLine(ctx, screen) {
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = this.options.connectWidth;
+
+    let prev = -1;
+    for (let i = 0; i < this.count; i++) {
+      if (!this._live[i]) continue;            // not part of the sequence this frame
+      const p = screen[i];
+      if (!p) { prev = -1; continue; }          // behind the horizon: lift the pen
+
+      if (prev >= 0) {
+        const a = screen[prev];
+        // The earlier vertex's own resolved fill -- a per-point style hook returning a
+        // different colour along the sequence produces a gradient with no extra API.
+        ctx.strokeStyle = this._style[prev].fill;
+        ctx.beginPath();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(p[0], p[1]);
+        ctx.stroke();
+      }
+      prev = i;
+    }
+    ctx.restore();
+  }
+
+  /**
+   * The angular-radius ring around a point -- a real geographic circle of
+   * `style.ringRadiusDeg`, sampled on the sphere and projected point by point so it
+   * foreshortens near the horizon instead of drawing as a flat screen-space ellipse.
+   *
+   * Samples are built from the local east/north tangent frame at the point's CURRENT
+   * lon/lat (post-reconstruction), the same great-circle `travel()` the rest of this
+   * library uses for velocity arrows and boundary decorations -- not a separate,
+   * screen-space notion of "circle". `tracePolyline` then does the same horizon- and
+   * seam-breaking every other vector layer here relies on, so a ring that dips behind
+   * the globe's limb, or crosses a flat projection's seam, breaks cleanly instead of
+   * streaking across the canvas.
+   */
+  _drawRing(ctx, projector, i, style) {
+    const i3 = i * 3;
+    const base = [this._xyz[i3], this._xyz[i3 + 1], this._xyz[i3 + 2]];
+    const [lon, lat] = vec3ToLonLat(base);
+
+    const east = [0, 0, 0];
+    const north = [0, 0, 0];
+    tangentFrame(lon, lat, east, north);
+
+    const n = this.options.ringSegments;
+    if (!this._ringXyz || this._ringXyz.length !== n * 3) {
+      this._ringXyz = new Float64Array(n * 3);
+    }
+    const buf = this._ringXyz;
+    const theta = style.ringRadiusDeg * DEG;
+    const dir = [0, 0, 0];
+    const out = [0, 0, 0];
+
+    for (let k = 0; k < n; k++) {
+      const phi = (2 * Math.PI * k) / n;
+      const cosPhi = Math.cos(phi);
+      const sinPhi = Math.sin(phi);
+      dir[0] = east[0] * cosPhi + north[0] * sinPhi;
+      dir[1] = east[1] * cosPhi + north[1] * sinPhi;
+      dir[2] = east[2] * cosPhi + north[2] * sinPhi;
+      travel(base, dir, theta, out);
+      buf[k * 3] = out[0]; buf[k * 3 + 1] = out[1]; buf[k * 3 + 2] = out[2];
+    }
+
+    // Isolate our own stroke/fill state -- called mid-loop, between the keyline defaults
+    // set up for the symbol pass and the next symbol's own fillStyle assignment.
+    ctx.save();
+    const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
+    ctx.beginPath();
+    const drawn = tracePolyline(ctx, (v) => projector.project(v), buf, 0, n,
+                                { closed: true, seam });
+    if (drawn) {
+      if (style.ringFill) { ctx.fillStyle = style.ringFill; ctx.fill(); }
+      ctx.strokeStyle = style.ringColor;
+      ctx.lineWidth = style.ringWidth;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

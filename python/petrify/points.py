@@ -84,8 +84,61 @@ def _clean(value):
     return value
 
 
+def _partition_features(gdf, lon_field, lat_field):
+    """One throwaway `pygplates.Feature` per row, geometry only, for partitioning.
+
+    Tagged with the input row index via `set_name`, the same convention the caller uses
+    to realign partitioning's arbitrary output order -- see `points_from_dataframe`.
+    """
+    features = []
+    for index, (_, row) in enumerate(gdf.iterrows()):
+        feature = pygplates.Feature()
+        feature.set_geometry(
+            pygplates.PointOnSphere(float(row[lat_field]), float(row[lon_field])))
+        feature.set_name(str(index))
+        feature.set_valid_time(pygplates.GeoTimeInstant.create_distant_past(),
+                               pygplates.GeoTimeInstant.create_distant_future())
+        features.append(feature)
+    return features
+
+
+def _partition_plate_ids(features, model, polygons_source):
+    """Partition `features` and return {input index: (feature, plate_id, plate_begin_age)}.
+
+    Shared by the primary partition pass and the optional `partition_lon_field`/
+    `partition_lat_field` one -- both need exactly this, just against a different
+    coordinate pair. The `feature` in the result is the one `partition_into_plates`
+    hands back, not necessarily the same object passed in -- pygplates makes no promise
+    the input list is mutated in place, so anything reading the properties this call just
+    assigned (`reconstruction_plate_id`, `valid_time_begin`) has to read them from here.
+    """
+    partitioned = pygplates.partition_into_plates(
+        polygons_source, model.rotation_model, features,
+        properties_to_copy=[pygplates.PartitionProperty.reconstruction_plate_id,
+                             pygplates.PartitionProperty.valid_time_begin])
+
+    result = {}
+    unassigned = 0
+    for feature in partitioned:
+        index = int(feature.get_name())
+        plate_id = int(feature.get_reconstruction_plate_id())
+        if plate_id == 0:
+            unassigned += 1
+        begin, _ = feature.get_valid_time()  # always plain floats, inf for distant past
+        plate_begin_age = None if math.isinf(begin) else round(float(begin), 4)
+        result[index] = (feature, plate_id, plate_begin_age)
+
+    missing = [i for i in range(len(features)) if i not in result]
+    if missing:
+        raise RuntimeError(
+            "{} points were lost during partitioning (first at index {})".format(
+                len(missing), missing[0]))
+    return result, unassigned
+
+
 def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude",
-                          age_field="Age", fields=(), polygons="static"):
+                          age_field="Age", fields=(), polygons="static",
+                          partition_lon_field=None, partition_lat_field=None):
     """Build pygplates point features with plate IDs assigned by partitioning.
 
     The datasets this is aimed at -- ore deposit compilations, sample sites -- carry
@@ -111,6 +164,21 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
     untouched in that case (see below), so its begin age is technically "distant past",
     which would serialise as Infinity, not valid JSON -- reported as `None` instead, the
     same "not recorded" convention `_clean()` already uses for NaN.
+
+    `partition_lon_field`/`partition_lat_field` split the plate ASSIGNMENT from the
+    drawn POSITION -- e.g. a paleomagnetic pole, where the pole's own coordinates are
+    what gets drawn but the plate it moves with is decided by where its sample site sits,
+    not by the pole position. Default `None` means "same as `lon_field`/`lat_field`",
+    today's behaviour, unchanged. When given, a second, throwaway partition runs against
+    those fields purely to recover `plate_id`/`plate_begin_age` for the record -- the
+    features built from `lon_field`/`lat_field` (and their own `reconstruction_plate_id`,
+    which is what `build_points`'s 'trajectory' transport actually reconstructs from) are
+    completely untouched by this. That is deliberate, not an oversight: repointing the
+    same feature list's geometry instead would make 'trajectory' silently reconstruct the
+    partition anchor rather than the drawn position, for any caller who combines that
+    transport with a split -- two independent feature lists close that off rather than
+    relying on every future caller to remember the trap. This module stays ignorant of
+    what a "site" or a "pole" is; the names are deliberately generic (see ADR-0001).
     """
     features = []
     meta = []
@@ -146,32 +214,35 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
             record[name] = _clean(row.get(key))
         meta.append(record)
 
-    partitioned = pygplates.partition_into_plates(
-        model.static_polygons if polygons == "static" else model.continent_polygons,
-        model.rotation_model, features,
-        properties_to_copy=[pygplates.PartitionProperty.reconstruction_plate_id,
-                             pygplates.PartitionProperty.valid_time_begin])
+    polygons_source = model.static_polygons if polygons == "static" else model.continent_polygons
+
+    # Always partition `features` itself (lon_field/lat_field) first: this is what sets
+    # each returned feature's own `reconstruction_plate_id`, the property 'trajectory'
+    # transport's `pygplates.reconstruct()` actually reconstructs from later, in
+    # `_trajectory_block`. That must reflect the DRAWN position regardless of any split
+    # below, so these are the feature objects that go into `ordered` no matter what --
+    # only the plate_id/plate_begin_age used for the RECORD can be overridden.
+    display_info, unassigned = _partition_plate_ids(features, model, polygons_source)
+    plate_ids = display_info
+
+    if partition_lon_field is not None or partition_lat_field is not None:
+        # A second, throwaway partition against the split fields, purely to recover the
+        # record's plate_id/plate_begin_age -- its own feature objects are discarded once
+        # read, never mixed into `ordered`. See the docstring for why.
+        partition_features = _partition_features(
+            gdf, partition_lon_field or lon_field, partition_lat_field or lat_field)
+        plate_ids, unassigned = _partition_plate_ids(
+            partition_features, model, polygons_source)
 
     # Restore input order using the index carried on each feature, so the metadata list
     # and the geometry list stay aligned.
     ordered = [None] * len(meta)
-    unassigned = 0
-    for feature in partitioned:
-        index = int(feature.get_name())
-        plate_id = int(feature.get_reconstruction_plate_id())
-        if plate_id == 0:
-            unassigned += 1
+    for index, (feature, _, _) in display_info.items():
+        _, plate_id, plate_begin_age = plate_ids[index]
         record = dict(meta[index])
         record["plate_id"] = plate_id
-        begin, _ = feature.get_valid_time()  # always plain floats, inf for distant past
-        record["plate_begin_age"] = None if math.isinf(begin) else round(float(begin), 4)
+        record["plate_begin_age"] = plate_begin_age
         ordered[index] = (feature, record)
-
-    missing = [i for i, item in enumerate(ordered) if item is None]
-    if missing:
-        raise RuntimeError(
-            "{} points were lost during partitioning (first at index {})".format(
-                len(missing), missing[0]))
 
     return ordered, unassigned
 

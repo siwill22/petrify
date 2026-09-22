@@ -135,18 +135,24 @@ def export_series(model_name="Merdith2021", start=0, end=250, step=1,
 def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
                   anchor_plate=0, transport="rotations", fields=(), categories=None,
                   meta=None, decimals=2, out_dir="data", filename=None, model=None,
-                  quiet=False):
+                  quiet=False, partition_lon_field=None, partition_lat_field=None):
     """Reconstruct a point dataset and write it as one JSON file.
 
     `transport` may also be 'both', which writes points.json (rotations) alongside
     points_trajectory.json. That is worth the extra build time: reconstructing the same
     points two independent ways and comparing is the sharpest check there is on either.
+
+    `partition_lon_field`/`partition_lat_field` pass straight through to
+    `points_from_dataframe` -- see its docstring for why a caller would want plate
+    assignment tested against different coordinates than the ones drawn.
     """
     model = model or load_model(model_name)
     times = list(range(start, end + 1, step))
     os.makedirs(out_dir, exist_ok=True)
 
-    records, unassigned = points_from_dataframe(gdf, model, fields=fields)
+    records, unassigned = points_from_dataframe(
+        gdf, model, fields=fields,
+        partition_lon_field=partition_lon_field, partition_lat_field=partition_lat_field)
     if not quiet:
         print("{} points, {} distinct plates".format(
             len(records), len({p["plate_id"] for _, p in records})))
