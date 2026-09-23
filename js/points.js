@@ -295,6 +295,11 @@ export class PointLayer {
    * `undefined`, not `null`) -- always valid, unchanged from before this check existed.
    */
   _plateValidAt(point, time) {
+    // An explicit override (even to plate 0, the anchor -- a deliberately fixed
+    // marker) is trusted at every time. Only an UNTRUSTED plate 0 -- partitioning
+    // fell through to it on its own -- gets the defensive "present only" gate
+    // below, since that means "not assigned", not "assigned to the anchor".
+    if (point.plate_forced) return true;
     if (point.plate_begin_age != null) return time <= point.plate_begin_age;
     if (point.plate_id === 0) return time <= 0;
     return true;
@@ -428,7 +433,7 @@ export class PointLayer {
    */
   restyle() {
     const custom = this.options.style;
-    const defaults = { symbol: 'circle', fill: this.options.fill,
+    const defaults = { symbol: this.options.symbol || 'circle', fill: this.options.fill,
                        size: this.options.size,
                        ringColor: this.options.ringColor, ringWidth: this.options.ringWidth };
 
@@ -994,6 +999,22 @@ function symbolPath(ctx, symbol, x, y, r) {
       ctx.moveTo(x, y - r * 1.2);
       ctx.lineTo(x, y + r * 1.2);
       break;
+
+    case 'star': {
+      // Five-pointed star, outer radius 1.5x the nominal size (a plain polygon at
+      // r would read as a small, indistinct blob at these pixel sizes).
+      const outer = r * 1.5;
+      const inner = outer * 0.38;
+      for (let k = 0; k < 10; k++) {
+        const a = (Math.PI / 5) * k - Math.PI / 2;
+        const rad = k % 2 === 0 ? outer : inner;
+        const px = x + Math.cos(a) * rad;
+        const py = y + Math.sin(a) * rad;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    }
 
     default:
       ctx.moveTo(x + r, y);

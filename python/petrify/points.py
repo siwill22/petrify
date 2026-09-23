@@ -182,18 +182,27 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
     what a "site" or a "pole" is; the names are deliberately generic (see ADR-0001).
 
     `plate_id_field` trusts an existing plate-id column instead of the partitioned
-    result, for rows where it is not null and not 0. Some compilations (LIPs, ore
+    result, for rows where it is not null (NaN). Some compilations (LIPs, ore
     deposits with expert QA) ship a plate id that reflects real domain knowledge
     point-in-polygon testing cannot recover -- especially for oceanic crust a
     model's static polygons may not cover at all, which is exactly when partitioning
     silently falls back to plate 0 (pinned, never moves). Partitioning still runs
-    for every row regardless, both to fill in rows this column leaves null/0 and
+    for every row regardless, both to fill in rows this column leaves null and
     because it is what sets the drawn feature's own `reconstruction_plate_id` (see
     above) -- this only overrides the RECORD read back from it, same as the
     `partition_lon_field`/`partition_lat_field` split. An overridden row's
     `plate_begin_age` is left `None` (always valid) rather than keeping whatever
     partitioning happened to find, since that age describes a different polygon's
     own begin age, not the supplied plate's.
+
+    An explicit `0` is a real override, not "no override" -- a caller who wants a
+    point held at its literal, present-day position at every time (a fixed marker
+    in the mantle/absolute frame, say) asks for the anchor plate the same way any
+    other override is asked for. That is a different claim than partitioning
+    falling through to plate 0 on its own, which means "not assigned, don't trust
+    this outside the present" -- so an override, even to 0, also sets
+    `plate_forced=True` on the record, the signal a renderer's own plate-0
+    suspicion (age-gating it to the present only) needs to stand down for.
     """
     features = []
     meta = []
@@ -260,23 +269,22 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
         ordered[index] = (feature, record)
 
     if plate_id_field is not None:
-        overridden = 0
         for index, (_, row) in enumerate(gdf.iterrows()):
             given = row.get(plate_id_field)
             if given is None or (isinstance(given, float) and math.isnan(given)):
                 continue
             given = int(given)
-            if given == 0:
-                continue
             feature, record = ordered[index]
             was_unassigned = record["plate_id"] == 0
             record = dict(record)
             record["plate_id"] = given
             record["plate_begin_age"] = None
+            record["plate_forced"] = True
             ordered[index] = (feature, record)
-            if was_unassigned:
-                overridden += 1
-        unassigned -= overridden
+            if was_unassigned and given != 0:
+                unassigned -= 1
+            elif not was_unassigned and given == 0:
+                unassigned += 1
 
     return ordered, unassigned
 

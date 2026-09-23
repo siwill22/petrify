@@ -291,3 +291,19 @@ test('connectLive: breaks at the horizon, unlike a skipped dead point', () => {
   // No segment reaches across the culled point -- 0 and 2 are NOT joined.
   assert.equal(segments.length, 0);
 });
+
+/* ---- plate_forced: an explicit anchor-plate override stays visible at every time --- */
+
+test('plate_forced: an untrusted plate-0 point (partitioning fell through) is hidden before the present', () => {
+  const data = baseData([{ lon: 0, lat: 0, plate_id: 0, age: 100 }]);
+  const layer = new PointLayer(data, { spiderfy: false });
+  assert.equal(layer.isLive(layer.points[0], 50), false);
+  assert.equal(layer.isLive(layer.points[0], 0), true);
+});
+
+test('plate_forced: an explicit anchor-plate override stays visible at every time', () => {
+  const data = baseData([{ lon: 0, lat: 0, plate_id: 0, plate_forced: true, age: 100 }]);
+  const layer = new PointLayer(data, { spiderfy: false });
+  assert.equal(layer.isLive(layer.points[0], 50), true);
+  assert.equal(layer.isLive(layer.points[0], 0), true);
+});

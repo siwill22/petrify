@@ -178,6 +178,50 @@ def test_no_split_is_pixel_for_pixel_identical_to_before(model):
         assert fb.get_reconstruction_plate_id() == fe.get_reconstruction_plate_id()
 
 
+# ---- plate_id_field: trusting an existing plate assignment --------------------------
+
+def test_plate_id_field_overrides_a_partitioned_assignment(model):
+    # Drawn inside plate A's polygon, but the compilation says plate B -- trusted.
+    gdf = df([{"Longitude": 5, "Latitude": 5, "Age": 1, "GivenPlate": PLATE_B}])
+    records, unassigned = points_from_dataframe(gdf, model, plate_id_field="GivenPlate")
+    assert unassigned == 0
+    _, record = records[0]
+    assert record["plate_id"] == PLATE_B
+    assert record["plate_begin_age"] is None
+    assert record["plate_forced"] is True
+
+
+def test_plate_id_field_null_leaves_the_partitioned_assignment_alone(model):
+    gdf = df([{"Longitude": 5, "Latitude": 5, "Age": 1, "GivenPlate": float("nan")}])
+    records, unassigned = points_from_dataframe(gdf, model, plate_id_field="GivenPlate")
+    assert unassigned == 0
+    _, record = records[0]
+    assert record["plate_id"] == PLATE_A
+    assert "plate_forced" not in record
+
+
+def test_plate_id_field_explicit_zero_forces_the_anchor_plate(model):
+    """0 is a real override -- 'hold this point fixed', not 'no override' -- and must be
+    told apart from a null cell, which is silently left to partitioning. A point drawn
+    inside plate A's polygon (which would otherwise reconstruct as moving) is forced to
+    the anchor instead, and unassigned rises because it is now genuinely fixed."""
+    gdf = df([{"Longitude": 5, "Latitude": 5, "Age": 1, "GivenPlate": 0}])
+    records, unassigned = points_from_dataframe(gdf, model, plate_id_field="GivenPlate")
+    assert unassigned == 1
+    _, record = records[0]
+    assert record["plate_id"] == 0
+    assert record["plate_begin_age"] is None
+    assert record["plate_forced"] is True
+
+
+def test_plate_id_field_zero_does_not_double_count_an_already_unassigned_point(model):
+    gdf = df([{"Longitude": 80, "Latitude": 80, "Age": 1, "GivenPlate": 0}])
+    records, unassigned = points_from_dataframe(gdf, model, plate_id_field="GivenPlate")
+    assert unassigned == 1
+    _, record = records[0]
+    assert record["plate_forced"] is True
+
+
 # ---- end to end: build_points()'s two transports stay honest with a split -----------
 
 def test_trajectory_transport_reconstructs_the_drawn_point_not_the_partition_anchor(model):

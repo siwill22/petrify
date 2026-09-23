@@ -132,6 +132,62 @@ existing plate assignment. None of the three existed before.
   fingerprint extended to include the override column so a rebuild with a
   different `plate_id=` cannot hit a stale cache entry.
 
+Three more additions, all found extending the same LLSVP viewer once the
+three above were in place and its author asked for a richer eruption
+marker: a big, obvious symbol for the eruption itself, and a second,
+permanently fixed marker for where it happened relative to the (also
+fixed) LLSVP backdrop, distinct from the existing blue dot that tracks
+where the erupted material has been carried since.
+
+- **`View.points()` gains `symbol=`**, the whole layer's marker shape
+  (`'circle'` the default, `'square'`, `'diamond'`, `'triangle'`,
+  `'triangle-down'`, `'hexagon'`, `'cross'`, now also `'star'`).
+  `points.js`'s `symbolPath()` already dispatches on a `symbol` string per
+  point/category — a five-pointed star was the only shape missing — but
+  the layer-wide default baked into `restyle()` was a hardcoded `'circle'`
+  literal, not read from `this.options` at all, so there was no way for a
+  whole layer to ask for anything else without a `style_js` escape hatch
+  for what is a one-line, page-wide choice. Now `this.options.symbol ||
+  'circle'`, threaded from the recipe the same way `size`/`keylineAlpha`
+  already are (`explorer.js`'s `loadLayer` now passes `symbol: spec.symbol
+  ?? 'circle'` into `PointLayer.load()`).
+- **`window=`, with `lifespan="range"`, now also accepts a `(before,
+  after)` pair**, not just a single number. The single-number case
+  (`from = age + window, to = age`) is unchanged and still means "visible
+  only in the run-up to `age`, never after" — right for a preview. A pair
+  instead brackets `age` on both sides (`from = age + before, to = age -
+  after`), for a brief, symmetric pulse marking the event itself, which a
+  one-sided window cannot express (it can end exactly at `age`, never
+  after it). No JS change: still just the same `from`/`to` fields
+  `points.js`'s `range` lifespan already reads.
+- **An explicit `0` in `plate_id=` is now a real override — the anchor
+  plate, i.e. "hold this point at its literal position forever" — not a
+  no-op indistinguishable from "no override".** Before, `points_from_
+  dataframe()`'s override loop treated `given == 0` exactly like a null/NaN
+  cell: skipped, deferring to whatever partitioning found. That makes it
+  impossible to ever explicitly ask for the anchor plate through this
+  column, which is exactly what a marker meant to sit at a literal,
+  never-reconstructed lon/lat needs (the LLSVP viewer's new "eruption
+  site, mantle frame" star: reconstructed once, in Python, to its
+  eruption-age paleoposition, then never rotated again). Distinguishing
+  the two required a second look at `points.js`'s own `_plateValidAt()`,
+  which has a *deliberate*, separate reason to distrust plate 0: when
+  partitioning itself falls through to plate 0 (a point outside every
+  static polygon), the point is shown only at the present, on the theory
+  that "unassigned" is not the same claim as "assigned to the anchor" and
+  showing it moving-with-nothing at every past time would misrepresent
+  data that was never really reconstructed at all. An override to 0 is
+  the opposite claim — the caller looked at this specific point and
+  decided it belongs at the anchor — so it needs to bypass that gate
+  rather than trigger it. Both Python and JS now carry a `plate_forced`
+  flag, set only by an explicit override (any value, including 0), which
+  `_plateValidAt()` checks first and trusts unconditionally. Covered by
+  new tests on both sides: `python/tests/test_points.py` (override to a
+  real plate, null leaves partitioning alone, explicit `0` forces the
+  anchor and is distinguished from an already-unassigned row in the
+  `unassigned` count) and `test/points.test.mjs` (an untrusted plate-0
+  point is hidden before the present; a `plate_forced` one is not).
+
 ## v0.15.0
 
 Two fixes, both found while Geode built a "Map Orientation" control (an

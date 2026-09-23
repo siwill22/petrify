@@ -322,7 +322,7 @@ class View:
                colours=None, lifespan="since", window=None, highlight=None, size=3.4,
                keyline_alpha=0.55, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
-               legend_title=None, name=None, plate_id=None):
+               legend_title=None, name=None, plate_id=None, symbol=None):
         """Put a DataFrame of located, dated things on the globe.
 
         `age`, `lon`, `lat`, `group` and everything in `hover` are COLUMN NAMES. The
@@ -333,16 +333,20 @@ class View:
         of column -> label, or column -> {label, unit, error, errorUnit} where a
         measurement and its uncertainty belong on one line.
 
-        `window`, with `lifespan="range"`, is Myr *before* `age` that a point stays
-        visible -- e.g. a preview marker that should appear only in the run-up to
-        some later event, not persist after it (that is what `lifespan="since"` is
-        for). Internally this is `from = age + window, to = age`, the `from`/`to`
-        pair the renderer's `range` lifespan already reads -- computed here from the
-        single `age` column already being carried, so the caller never has to add
-        their own `from`/`to` columns. A global width, not per-row: if a dataset
-        already encodes its own per-feature window (e.g. a `valid_time` range baked
-        into a source file), derive one `age` column from it (its midpoint, usually)
-        before calling this, rather than trying to carry that per-row width through.
+        `window`, with `lifespan="range"`, is a Myr width around `age` that a point
+        stays visible. A single number is Myr *before* `age` only -- e.g. a preview
+        marker that should appear only in the run-up to some later event, not
+        persist after it (that is what `lifespan="since"` is for). A `(before,
+        after)` pair instead brackets `age` on both sides -- e.g. a brief, symmetric
+        pulse for the event itself, visible from `age + before` to `age - after`.
+        Internally this is `from = age + before, to = age - after` (a bare number
+        means `after = 0`), the `from`/`to` pair the renderer's `range` lifespan
+        already reads -- computed here from the single `age` column already being
+        carried, so the caller never has to add their own `from`/`to` columns. A
+        global width, not per-row: if a dataset already encodes its own per-feature
+        window (e.g. a `valid_time` range baked into a source file), derive one
+        `age` column from it (its midpoint, usually) before calling this, rather
+        than trying to carry that per-row width through.
 
         `plate_id`, a column name, trusts an existing plate assignment instead of
         the default (point-in-polygon testing against the Reconstruction Model's
@@ -350,8 +354,17 @@ class View:
         knowledge partitioning cannot recover -- oceanic crust especially, which a
         model's static polygons may not cover at all, silently pinning such a point
         at its present-day position forever. Only rows where this column is
-        non-null and non-zero are overridden; everything else still gets a plate id
-        from partitioning as usual.
+        non-null are overridden; everything else still gets a plate id from
+        partitioning as usual. An explicit `0` is itself a real override -- the
+        anchor plate, i.e. "hold this point at its literal position forever" -- not
+        a way of saying "no override", which is what a null/NaN cell means instead.
+        That is how a marker fixed in the absolute/mantle frame (never reconstructed
+        by any plate motion) is asked for: a constant plate-id column of zeros.
+
+        `symbol` is the whole layer's marker shape (`'circle'` the default,
+        `'square'`, `'diamond'`, `'triangle'`, `'triangle-down'`, `'hexagon'`,
+        `'cross'`, `'star'`) -- a per-layer choice, not per-category; a page
+        needing different shapes per group is exactly what `style_js` is for.
 
         `style_js` is the escape hatch, and a supported path rather than a failure:
         a JS module whose default export is `(point, category, api) => {fill, ...}`.
@@ -364,6 +377,15 @@ class View:
                 "(got lifespan={!r})".format(lifespan))
         if lifespan == "range" and window is not None and age is None:
             raise KeyError("window= needs an age= column to measure the range from")
+        if isinstance(window, (tuple, list)):
+            if len(window) != 2:
+                raise ValueError(
+                    "window=(before, after) needs exactly two values, got {!r}".format(
+                        window))
+            window_before, window_after = float(window[0]), float(window[1])
+        else:
+            window_before = float(window) if window is not None else None
+            window_after = 0.0
         columns = set(df.columns)
 
         def need(col, what):
@@ -411,8 +433,8 @@ class View:
             # fields, same mechanism as `hover`/`group`, just under the two literal
             # keys the renderer already knows. No petrify change needed below this.
             prepared = prepared.copy()
-            prepared["_geode_range_from"] = prepared["Age"] + float(window)
-            prepared["_geode_range_to"] = prepared["Age"]
+            prepared["_geode_range_from"] = prepared["Age"] + window_before
+            prepared["_geode_range_to"] = prepared["Age"] - window_after
             fields = fields + [("from", "_geode_range_from"), ("to", "_geode_range_to")]
 
         categories = None
@@ -445,6 +467,8 @@ class View:
                       {"source": source, "doi": doi, "caption": caption}.items()
                       if v},
         }
+        if symbol:
+            spec["symbol"] = symbol
         if style_js:
             spec["styleJs"] = os.path.basename(style_js)
             spec["_style_js_path"] = os.path.abspath(style_js)
@@ -464,7 +488,7 @@ class View:
                      lat=_unless(lat, _find_column(columns, LAT_NAMES, None)),
                      group=group, labels=labels, colours=colours,
                      lifespan=None if lifespan == "since" else lifespan,
-                     window=window, plate_id=plate_id,
+                     window=window, plate_id=plate_id, symbol=symbol,
                      highlight=highlight, size=None if size == 3.4 else size,
                      hover=hover or None, label=label, footer=footer,
                      style_js=style_js, source=source, doi=doi, caption=caption,
