@@ -207,6 +207,12 @@ existing `keyline_alpha` (opacity, not weight) controls.
   0.6px pen regardless of how bold a mark needed to be. Threaded through
   the same way `symbol` is: `spec["keylineWidth"] = keyline_width` only
   when given, so an unset call is byte-identical to before.
+- **`'star'`'s inner/outer radius ratio is now 0.5, not ~0.38.** Asked for
+  after switching from 5 to 7-8 points: the tighter ratio, fine for a
+  classic five-point star, reads as thin and spiky at higher point counts.
+  A single shared constant, not configurable per layer — no caller has
+  asked for the old ratio, and it is one visual language for the shape,
+  not a per-page choice like point count or colour.
 
 ## v0.15.0
 

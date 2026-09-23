@@ -1003,9 +1003,11 @@ function symbolPath(ctx, symbol, x, y, r, points = 5) {
 
     case 'star': {
       // `points`-pointed star, outer radius 1.5x the nominal size (a plain polygon
-      // at r would read as a small, indistinct blob at these pixel sizes).
+      // at r would read as a small, indistinct blob at these pixel sizes). Inner
+      // radius at 0.5x outer, rather than a classic ~0.38 (five-point) ratio --
+      // blunter, less spiky points, which reads better at higher point counts.
       const outer = r * 1.5;
-      const inner = outer * 0.38;
+      const inner = outer * 0.5;
       const n = points * 2;
       for (let k = 0; k < n; k++) {
         const a = (Math.PI / points) * k - Math.PI / 2;
