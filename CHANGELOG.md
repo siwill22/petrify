@@ -188,6 +188,26 @@ where the erupted material has been carried since.
   `unassigned` count) and `test/points.test.mjs` (an untrusted plate-0
   point is hidden before the present; a `plate_forced` one is not).
 
+Two smaller follow-ups, once the LLSVP viewer's author actually looked at the
+result and asked for the eruption star to read as more obviously "the main
+event": `symbolPath()`'s `'star'` case had a point count hardcoded to five,
+and there was no layer-wide way to ask for a thicker keyline than the
+existing `keyline_alpha` (opacity, not weight) controls.
+
+- **`symbol='star'` point count is now `starPoints=`**, a layer-wide style
+  option (default 5, unchanged) resolved and passed through exactly like
+  `symbol`/`size` already are — `View.points()` gains a matching
+  `star_points=` kwarg. `symbolPath()` itself only needed the hardcoded `5`
+  and `10` replaced with the parameter and `points * 2`; the geometry was
+  already general.
+- **`View.points()` gains `keyline_width=`.** `points.js` already read a
+  layer-wide `this.options.keylineWidth` (`explorer.js`'s `loadLayer` was
+  already passing `spec.keylineWidth ?? 0.6` through) — nothing on the
+  Python side had ever set it in a recipe, so every layer got the same
+  0.6px pen regardless of how bold a mark needed to be. Threaded through
+  the same way `symbol` is: `spec["keylineWidth"] = keyline_width` only
+  when given, so an unset call is byte-identical to before.
+
 ## v0.15.0
 
 Two fixes, both found while Geode built a "Map Orientation" control (an

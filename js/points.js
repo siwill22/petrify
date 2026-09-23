@@ -434,7 +434,7 @@ export class PointLayer {
   restyle() {
     const custom = this.options.style;
     const defaults = { symbol: this.options.symbol || 'circle', fill: this.options.fill,
-                       size: this.options.size,
+                       size: this.options.size, starPoints: this.options.starPoints || 5,
                        ringColor: this.options.ringColor, ringWidth: this.options.ringWidth };
 
     this._style = this.points.map((p) => {
@@ -443,6 +443,7 @@ export class PointLayer {
         symbol: cat.symbol || defaults.symbol,
         fill: cat.fill || defaults.fill,
         size: cat.size ?? defaults.size,
+        starPoints: cat.starPoints ?? defaults.starPoints,
         ringColor: defaults.ringColor,
         ringWidth: defaults.ringWidth,
       };
@@ -550,7 +551,7 @@ export class PointLayer {
 
       ctx.fillStyle = style.fill;
       ctx.beginPath();
-      symbolPath(ctx, style.symbol, p[0], p[1], style.size);
+      symbolPath(ctx, style.symbol, p[0], p[1], style.size, style.starPoints);
       // The cross is a stroke-only mark; filling it would just make a blob.
       if (style.symbol === 'cross') {
         ctx.save();
@@ -953,7 +954,7 @@ function sameMembers(a, b) {
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /** Symbol outlines, all centred on (x, y) and sized by a nominal radius. */
-function symbolPath(ctx, symbol, x, y, r) {
+function symbolPath(ctx, symbol, x, y, r, points = 5) {
   switch (symbol) {
     case 'square':
       ctx.rect(x - r, y - r, r * 2, r * 2);
@@ -1001,12 +1002,13 @@ function symbolPath(ctx, symbol, x, y, r) {
       break;
 
     case 'star': {
-      // Five-pointed star, outer radius 1.5x the nominal size (a plain polygon at
-      // r would read as a small, indistinct blob at these pixel sizes).
+      // `points`-pointed star, outer radius 1.5x the nominal size (a plain polygon
+      // at r would read as a small, indistinct blob at these pixel sizes).
       const outer = r * 1.5;
       const inner = outer * 0.38;
-      for (let k = 0; k < 10; k++) {
-        const a = (Math.PI / 5) * k - Math.PI / 2;
+      const n = points * 2;
+      for (let k = 0; k < n; k++) {
+        const a = (Math.PI / points) * k - Math.PI / 2;
         const rad = k % 2 === 0 ? outer : inner;
         const px = x + Math.cos(a) * rad;
         const py = y + Math.sin(a) * rad;

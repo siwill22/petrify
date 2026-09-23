@@ -658,6 +658,7 @@ async function loadLayer(spec, ctx) {
       return PointLayer.load(spec.url, {
         size: spec.size ?? 3.4,
         symbol: spec.symbol ?? 'circle',
+        starPoints: spec.starPoints ?? 5,
         keyline: spec.keyline === null ? null
           : rgba(resolve(spec.keyline ?? '@page'), spec.keylineAlpha ?? 0.55),
         keylineWidth: spec.keylineWidth ?? 0.6,

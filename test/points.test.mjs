@@ -25,6 +25,7 @@ function makeCtx() {
     beginPath() { path = []; ops.push(['beginPath']); },
     moveTo(x, y) { path.push(['M', x, y]); ops.push(['moveTo', x, y]); },
     lineTo(x, y) { path.push(['L', x, y]); ops.push(['lineTo', x, y]); },
+    closePath() { ops.push(['closePath']); },
     arc() { ops.push(['arc']); },
     fill() { ops.push(['fill']); },
     stroke() {
@@ -306,4 +307,32 @@ test('plate_forced: an explicit anchor-plate override stays visible at every tim
   const layer = new PointLayer(data, { spiderfy: false });
   assert.equal(layer.isLive(layer.points[0], 50), true);
   assert.equal(layer.isLive(layer.points[0], 0), true);
+});
+
+/* ---- star: point count is a layer-wide option, default 5 unchanged --------------- */
+
+test('star: default point count is 5 (10 path vertices) when starPoints is not set', () => {
+  const data = baseData([{ lon: 0, lat: 0, plate_id: 0 }]);
+  const layer = new PointLayer(data, { spiderfy: false, symbol: 'star' });
+  layer.setTime(0);
+
+  const { ctx, ops } = makeCtx();
+  layer.draw(ctx, makeProjector());
+
+  const moves = ops.filter((o) => o[0] === 'moveTo').length;
+  const lines = ops.filter((o) => o[0] === 'lineTo').length;
+  assert.equal(moves, 1);
+  assert.equal(lines, 9, 'a 5-point star has 10 vertices: 1 moveTo + 9 lineTo');
+});
+
+test('star: starPoints raises the vertex count (e.g. 8 points -> 16 vertices)', () => {
+  const data = baseData([{ lon: 0, lat: 0, plate_id: 0 }]);
+  const layer = new PointLayer(data, { spiderfy: false, symbol: 'star', starPoints: 8 });
+  layer.setTime(0);
+
+  const { ctx, ops } = makeCtx();
+  layer.draw(ctx, makeProjector());
+
+  const lines = ops.filter((o) => o[0] === 'lineTo').length;
+  assert.equal(lines, 15, 'an 8-point star has 16 vertices: 1 moveTo + 15 lineTo');
 });

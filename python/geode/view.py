@@ -320,9 +320,10 @@ class View:
 
     def points(self, df, age=None, lon=None, lat=None, group=None, labels=None,
                colours=None, lifespan="since", window=None, highlight=None, size=3.4,
-               keyline_alpha=0.55, hover=(), label=None, footer=None,
+               keyline_alpha=0.55, keyline_width=None, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
-               legend_title=None, name=None, plate_id=None, symbol=None):
+               legend_title=None, name=None, plate_id=None, symbol=None,
+               star_points=None):
         """Put a DataFrame of located, dated things on the globe.
 
         `age`, `lon`, `lat`, `group` and everything in `hover` are COLUMN NAMES. The
@@ -365,6 +366,11 @@ class View:
         `'square'`, `'diamond'`, `'triangle'`, `'triangle-down'`, `'hexagon'`,
         `'cross'`, `'star'`) -- a per-layer choice, not per-category; a page
         needing different shapes per group is exactly what `style_js` is for.
+        `star_points` is `symbol='star'`'s own point count (default 5); ignored
+        for every other symbol. `keyline_width`, like `keyline_alpha`, is a
+        layer-wide pen weight for the outline every symbol is stroked with
+        (default 0.6) -- thicker for a mark that needs to read as bold, not
+        just brightly coloured.
 
         `style_js` is the escape hatch, and a supported path rather than a failure:
         a JS module whose default export is `(point, category, api) => {fill, ...}`.
@@ -469,6 +475,10 @@ class View:
         }
         if symbol:
             spec["symbol"] = symbol
+        if star_points:
+            spec["starPoints"] = star_points
+        if keyline_width is not None:
+            spec["keylineWidth"] = keyline_width
         if style_js:
             spec["styleJs"] = os.path.basename(style_js)
             spec["_style_js_path"] = os.path.abspath(style_js)
@@ -489,6 +499,7 @@ class View:
                      group=group, labels=labels, colours=colours,
                      lifespan=None if lifespan == "since" else lifespan,
                      window=window, plate_id=plate_id, symbol=symbol,
+                     star_points=star_points, keyline_width=keyline_width,
                      highlight=highlight, size=None if size == 3.4 else size,
                      hover=hover or None, label=label, footer=footer,
                      style_js=style_js, source=source, doi=doi, caption=caption,
