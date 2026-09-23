@@ -111,21 +111,25 @@ export const THEMES = [
     lightness: 'dark',
     temperature: 'neutral',
     weight: 1,
-    // 'shade', not 'contrast': the pen reads as land's own grey, only a little
-    // lighter, rather than a distinct hue standing out against it -- 'contrast'
-    // (the original choice here) pointed roles.outline at a pale blue with no
-    // relation to land's colour at all, which read as far too loud a line
-    // around continents whose whole point was to stay out of the way of a
-    // painted field on top of them (Geode's paleomagnetic-poles viewers).
-    outline: 'shade',
+    outline: 'contrast',
     roles: {
       page: '#0c0c0d',
       water: '#1a1b1d',
       land: '#4a4d51',
-      // Only its LIGHTNESS is used under 'shade' (see colour.js's
-      // withLightnessOf()) -- land's own hue/chroma at this lightness, about
-      // 14 L* above land's ~33, is "outlined", not "highlighted".
-      outline: '#6c6f73',
+      // A dark, muted blue -- only ~4 L* above land's own ~33, not the
+      // original pale sky blue (#adcefe, L~82) that read as far too loud a
+      // line around continents whose whole point was to stay out of the way
+      // of a painted field on top of them (Geode's paleomagnetic-poles
+      // viewers). Tried a pure land-hue 'shade' pen first (land's own grey at
+      // a higher lightness); every lightness on that neutral axis fails the
+      // legibility gate against accentMuted, itself a near-neutral grey (see
+      // check_themes.mjs/docs/adr/0041) -- a real conflict between "close to
+      // land" and "distinguishable from every accent", not a tuning miss.
+      // This keeps the ORIGINAL hue family (blue) but pulls it down to near
+      // land's own darkness and well down in chroma, found by a numeric
+      // search over the same CIEDE2000-under-CVD metric check_themes.mjs
+      // gates on, rather than picked by eye and hoped.
+      outline: '#305696',
       accentHot: '#82494e',
       accentWarm: '#a3857a',
       accentBright: '#e3deb4',

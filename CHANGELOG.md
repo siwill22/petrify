@@ -4,6 +4,17 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.15.1
+
+- **The `graphite` Theme's outline goes back to `'contrast'` treatment, with
+  a dark, muted blue pen (`#305696`) instead of v0.15.0's `'shade'`.** Every
+  lightness on land's own near-neutral axis (what `'shade'` draws) failed
+  the Theme legibility gate against `accentMuted`, itself a near-neutral
+  grey: a real conflict between "close to land" and "distinguishable from
+  every accent", not a tuning miss. The new pen keeps the original blue hue
+  family but sits only ~4 L\* above land and well down in chroma, found by a
+  numeric search over the same CIEDE2000-under-CVD metric the gate uses.
+
 ## v0.15.0
 
 Two fixes, both found while Geode built a "Map Orientation" control (an
