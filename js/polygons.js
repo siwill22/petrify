@@ -129,8 +129,47 @@ export class PolygonLayer {
       quatToMat3(q, this._mats.get(plate));
     }
 
+    this._transformRings(null);
+    return this;
+  }
+
+  /**
+   * Set plates' rotations directly, instead of looking them up in the rotation table --
+   * for a host that computes rotations itself, e.g. from a user dragging a plate around.
+   *
+   * `rotations` maps plate id to a unit quaternion [x, y, z, w], as a Map or a plain
+   * object. Only the plates named are touched; any others keep whatever setTime() or an
+   * earlier call gave them. A plate need not appear in the rotation table at all, so a
+   * layer built with `rotations: {}` is entirely driven from here.
+   *
+   * `time` only decides which rings are live (their begin/end validity). It defaults to
+   * the current time, or 0 if setTime() has never been called -- a layer with no
+   * rotation table has no other way to become drawable.
+   */
+  setRotations(rotations, time = this.currentTime ?? 0) {
+    this.currentTime = time;
+    const entries = rotations instanceof Map ? rotations : Object.entries(rotations);
+    const touched = new Set();
+    for (const [plate, q] of entries) {
+      const key = String(plate);
+      let m = this._mats.get(key);
+      if (!m) {
+        m = new Float64Array(9);
+        this._mats.set(key, m);
+      }
+      quatToMat3(q, m);
+      touched.add(key);
+    }
+    this._transformRings(touched);
+    return this;
+  }
+
+  /** Rotate live rings' home vertices into `xyz`: every plate's, or only `plates`'. */
+  _transformRings(plates) {
+    const time = this.currentTime;
     const v = this._v;
     for (const ring of this.rings) {
+      if (plates && !plates.has(ring.plate)) continue;
       if (!this.isLive(ring, time)) continue;
       const m = this._mats.get(ring.plate);
       if (!m) continue;
@@ -144,7 +183,6 @@ export class PolygonLayer {
         this.xyz[i + 2] = m[6] * v[0] + m[7] * v[1] + m[8] * v[2];
       }
     }
-    return this;
   }
 
   /** Validity runs from `begin` (older) down to `end` (younger), both in Ma. */

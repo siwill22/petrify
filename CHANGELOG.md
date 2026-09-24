@@ -4,6 +4,28 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.16.0
+
+Additions for a host that lets people drag plates around by hand (first consumer:
+GeodeViewers' Drag Plates). Nothing existing changes behaviour.
+
+- **`PolygonLayer.setRotations(rotations, time?)`** sets plates' rotations directly
+  (plate id → quaternion) instead of looking them up in the rotation table. A layer
+  built with `rotations: {}` is now drivable at all. Before, `draw()` bailed until
+  `setTime()` had run, and `setTime()` needs a table. `setTime()` and `setRotations()`
+  share the per-vertex loop, now `_transformRings()`.
+- **Gesture rotations in `rotations.js`:** `quatMultiply`, `quatConjugate`,
+  `quatFromAxisAngle`, `quatBetween(a, b)` (the drag: the smallest rotation carrying one
+  point onto another), and `quatToPoleAngle` (the inverse of `quatFromPoleAngle`, for
+  writing a rotation file).
+- **Spherical rings in `sphere.js`:** `ringSignedArea`, `ringContains` and
+  `ringCentroid`, on the same flat xyz buffers `PolygonLayer` stores. They handle a
+  pole inside the ring, a ring across the antimeridian, and a click on the far side of
+  the globe from a ring. A lon/lat point-in-polygon test gets all three wrong, and
+  clicking the ocean antipodal to a continent would pick that continent. Interior is on
+  the left (counter-clockwise), and the functions document that convention.
+- Tests: `test/drag.test.mjs`.
+
 ## v0.15.1
 
 - **The `graphite` Theme's outline goes back to `'contrast'` treatment, with

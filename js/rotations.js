@@ -102,3 +102,79 @@ export function mat3Apply(m, v, out) {
   out[0] = x; out[1] = y; out[2] = z;
   return out;
 }
+
+/*
+ * ---- Composing rotations interactively ----------------------------------------------
+ *
+ * The functions above read rotations out of a table. The ones below build them from
+ * gestures -- "the point I grabbed is now under the cursor" -- and turn the result back
+ * into the Euler pole and angle a rotation file stores. Quaternions are [x, y, z, w],
+ * as everywhere else in this file.
+ */
+
+/** Product a * b: the rotation that applies b FIRST, then a. Writes into `out`. */
+export function quatMultiply(a, b, out) {
+  out = out || [0, 0, 0, 1];
+  const [ax, ay, az, aw] = a;
+  const [bx, by, bz, bw] = b;
+  out[0] = aw * bx + ax * bw + ay * bz - az * by;
+  out[1] = aw * by - ax * bz + ay * bw + az * bx;
+  out[2] = aw * bz + ax * by - ay * bx + az * bw;
+  out[3] = aw * bw - ax * bx - ay * by - az * bz;
+  return out;
+}
+
+/** The inverse of a unit quaternion. */
+export function quatConjugate(q) {
+  return [-q[0], -q[1], -q[2], q[3]];
+}
+
+/** Rotation by `angleRad` (right-handed) about `axis`, which need not be unit length. */
+export function quatFromAxisAngle(axis, angleRad) {
+  const n = Math.hypot(axis[0], axis[1], axis[2]);
+  if (n < 1e-15) return [0, 0, 0, 1];
+  const s = Math.sin(angleRad / 2) / n;
+  return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(angleRad / 2)];
+}
+
+/**
+ * The smallest rotation carrying unit vector `a` onto unit vector `b`: about the pole of
+ * the great circle through them, by the angle between them. This is a drag -- a point
+ * grabbed at `a` and let go at `b` travels along that great circle.
+ *
+ * Identity when a and b coincide. Undefined when they are antipodal (every great circle
+ * through them qualifies); a drag cannot get there in one move, so that case is left to
+ * the caller rather than resolved arbitrarily here.
+ */
+export function quatBetween(a, b) {
+  const axis = [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+  const sin = Math.hypot(axis[0], axis[1], axis[2]);
+  const cos = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  if (sin < 1e-12) return [0, 0, 0, 1];
+  return quatFromAxisAngle(axis, Math.atan2(sin, cos));
+}
+
+/**
+ * Euler pole and angle for a unit quaternion -- the inverse of quatFromPoleAngle, and the
+ * form a GPlates rotation file wants.
+ *
+ * q and -q are the same rotation, so the pole is taken in whichever hemisphere gives a
+ * POSITIVE angle in [0, 180]. The identity has no pole; it is reported as the north pole
+ * with a zero angle, which is what rotation files conventionally write for it.
+ */
+export function quatToPoleAngle(q) {
+  let [x, y, z, w] = q;
+  if (w < 0) { x = -x; y = -y; z = -z; w = -w; }
+  const s = Math.hypot(x, y, z);
+  if (s < 1e-12) return { lon: 0, lat: 90, angle: 0 };
+  const angle = 2 * Math.atan2(s, w) / DEG;
+  return {
+    lon: Math.atan2(y, x) / DEG,
+    lat: Math.asin(Math.max(-1, Math.min(1, z / s))) / DEG,
+    angle,
+  };
+}

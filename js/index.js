@@ -30,10 +30,12 @@ export {
 export { tracePolyline, packLonLat } from './polyline.js';
 export {
   quatFromPoleAngle, quatSlerp, quatToMat3, mat3Multiply, mat3Apply,
+  quatMultiply, quatConjugate, quatFromAxisAngle, quatBetween, quatToPoleAngle,
 } from './rotations.js';
 export {
   DEG, lonLatToVec3, vec3ToLonLat, tangentFrame,
   cross, normalise, tangentTowards, travel, leftOfTravel,
+  ringSignedArea, ringContains, ringCentroid,
 } from './sphere.js';
 // camera.js's own `robinsonForward` is deliberately NOT re-exported: it takes a third
 // `centreLonDeg` argument that ./robinson.js's same-named two-argument function does not,
