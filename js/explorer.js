@@ -744,7 +744,18 @@ function buildBoundaryLegend(series, theme, render) {
   return list;
 }
 
-/** One toggle row per group, each showing the symbol used on the map. */
+/**
+ * One toggle row per group, each showing the symbol used on the map -- OR, when
+ * `spec` carries no `group=` at all (`layer.categories` empty, the common case for a
+ * single-purpose layer), exactly one row standing for the whole layer, bound to
+ * `layer.visible` rather than a `layer.types[type]` entry that would never exist.
+ *
+ * Previously a group-less layer still got a header and an "all" button, just with
+ * zero rows under it -- the loop below never ran, so `rows` stayed empty and the
+ * button had nothing to toggle. It looked like a control and did nothing: the one
+ * way to hide a whole layer that a page built from several single-category
+ * `.points()` calls (no `group=` in any of them) actually needs.
+ */
 function buildPointLegend(layer, spec, inks, render) {
   const wrap = el('div', 'dtm-legend-group');
   const head = el('div', 'dtm-legend-grouphead');
@@ -765,41 +776,54 @@ function buildPointLegend(layer, spec, inks, render) {
   const rows = [];
   const countEls = {};
   const showCounts = spec.legend?.counts !== false;
+  const hasCategories = Object.keys(layer.categories ?? {}).length > 0;
 
-  for (const [type, cat] of Object.entries(layer.categories ?? {})) {
+  function addRow(id, label, ink, total, isOn, setOn) {
     const li = el('li');
-    // The BRIGHT ink, always -- a legend row showing the faint variant would be
-    // reporting what the map looks like at the current time rather than what the
-    // category is, and under a fade of 0.07 it would be invisible.
-    const ink = inks.for(type).bright;
     li.innerHTML = `<span class="dtm-swatch dtm-swatch-sym">`
       + `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">`
       + `<circle cx="7" cy="7" r="4.4" fill="${escapeHtml(ink)}"/></svg></span>`
-      + `<span>${escapeHtml(cat.label || type)}`
+      + `<span>${escapeHtml(label)}`
       + (showCounts ? `<span class="dtm-legend-count"> · 0</span>` : '')
       + `</span>`;
-    li.title = `${totals[type] || 0} in the dataset`;
-    if (showCounts) countEls[type] = li.querySelector('.dtm-legend-count');
+    li.title = `${total} in the dataset`;
+    if (showCounts) countEls[id] = li.querySelector('.dtm-legend-count');
 
     li.addEventListener('click', () => {
-      layer.types[type] = !layer.types[type];
-      li.classList.toggle('is-off', !layer.types[type]);
+      setOn(!isOn());
+      li.classList.toggle('is-off', !isOn());
       render();
       syncAll();
     });
     list.append(li);
-    rows.push([type, li]);
+    rows.push({ li, isOn, setOn });
+  }
+
+  if (hasCategories) {
+    for (const [type, cat] of Object.entries(layer.categories)) {
+      // The BRIGHT ink, always -- a legend row showing the faint variant would be
+      // reporting what the map looks like at the current time rather than what the
+      // category is, and under a fade of 0.07 it would be invisible.
+      addRow(type, cat.label || type, inks.for(type).bright, totals[type] || 0,
+        () => layer.types[type] !== false,
+        (on) => { layer.types[type] = on; });
+    }
+  } else {
+    addRow('__layer', spec.legend?.title ?? 'Show', inks.for(null).bright,
+      layer.points.length,
+      () => layer.visible,
+      (on) => { layer.visible = on; });
   }
 
   function syncAll() {
-    allBtn.textContent = rows.some(([t]) => layer.types[t]) ? 'none' : 'all';
+    allBtn.textContent = rows.some((r) => r.isOn()) ? 'none' : 'all';
   }
 
   allBtn.addEventListener('click', () => {
-    const anyOn = rows.some(([t]) => layer.types[t]);
-    for (const [type, li] of rows) {
-      layer.types[type] = !anyOn;
-      li.classList.toggle('is-off', anyOn);
+    const anyOn = rows.some((r) => r.isOn());
+    for (const r of rows) {
+      r.setOn(!anyOn);
+      r.li.classList.toggle('is-off', anyOn);
     }
     render();
     syncAll();
@@ -809,8 +833,8 @@ function buildPointLegend(layer, spec, inks, render) {
   return {
     node: wrap,
     update() {
-      for (const [type, node] of Object.entries(countEls)) {
-        node.textContent = ` · ${layer.liveCount(type)}`;
+      for (const [id, node] of Object.entries(countEls)) {
+        node.textContent = ` · ${layer.liveCount(hasCategories ? id : null)}`;
       }
     },
   };
