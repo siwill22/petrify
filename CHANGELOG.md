@@ -42,6 +42,17 @@ here (not copied -- a different rendering stack: persistent classes there,
   `anchor_plate=` default (0) is what most consumers should keep using unless
   they have a viewer-specific reason, checked the same way this one now
   documents, not to copy.
+- **Legend: an ungrouped points layer is one row, not a heading + button.**
+  A `.points()` layer without `group=` used to get a heading, an "all"/"none"
+  button, and (after the first fix) one row repeating the heading -- the button
+  duplicated the row. Now it is a single row (swatch, name, live count) that
+  toggles `layer.visible` and fades when off. Grouped layers keep their heading
+  and all/none shortcut. Swatches now draw the layer's own `symbol` via the
+  map's `symbolPath` (now exported from `points.js`), not always a circle;
+  `style_js` layers keep the circle since their symbol can vary per point.
+- **`lon=`/`lat=` accept `{model: column}` dicts** on a multi-model view, for
+  positions that are themselves model-dependent (e.g. an eruption-age
+  paleoposition held fixed in the mantle frame).
 - **`export_points()` gains `polygons=` ('static' default, or 'continents'),
   finally threaded through to `points_from_dataframe()`, which has accepted
   it all along.** Required for Müller et al. (2022): confirmed directly

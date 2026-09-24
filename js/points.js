@@ -954,7 +954,7 @@ function sameMembers(a, b) {
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /** Symbol outlines, all centred on (x, y) and sized by a nominal radius. */
-function symbolPath(ctx, symbol, x, y, r, points = 5) {
+export function symbolPath(ctx, symbol, x, y, r, points = 5) {
   switch (symbol) {
     case 'square':
       ctx.rect(x - r, y - r, r * 2, r * 2);

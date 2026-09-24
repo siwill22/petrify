@@ -31,6 +31,7 @@ import {
   themeById, outlineColour, boundaryStyle, boundaryDecoration, velocityStyle,
 } from './themes.js';
 import { hexToRgb } from './colour.js';
+import { symbolPath } from './points.js';
 import { attachHover } from './hover.js';
 import { attachTimeSeries } from './timeseries-panel.js';
 import { attachDistanceHeatmap } from './distance-heatmap-panel.js';
@@ -745,27 +746,65 @@ function buildBoundaryLegend(series, theme, render) {
 }
 
 /**
- * One toggle row per group, each showing the symbol used on the map -- OR, when
- * `spec` carries no `group=` at all (`layer.categories` empty, the common case for a
- * single-purpose layer), exactly one row standing for the whole layer, bound to
- * `layer.visible` rather than a `layer.types[type]` entry that would never exist.
- *
- * Previously a group-less layer still got a header and an "all" button, just with
- * zero rows under it -- the loop below never ran, so `rows` stayed empty and the
- * button had nothing to toggle. It looked like a control and did nothing: the one
- * way to hide a whole layer that a page built from several single-category
- * `.points()` calls (no `group=` in any of them) actually needs.
+ * The legend's marker swatch: the layer's own symbol, drawn by the same
+ * `symbolPath` the map uses, so a diamond layer's key is a diamond. A `style_js`
+ * layer can vary its symbol per point, so it keeps the neutral circle.
+ */
+function symbolSwatch(spec, fill, keyline) {
+  const size = 14;
+  const dpr = globalThis.devicePixelRatio || 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width = `${size}px`;
+  canvas.style.height = `${size}px`;
+  canvas.setAttribute('aria-hidden', 'true');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+  const symbol = spec.styleJs ? 'circle' : (spec.symbol ?? 'circle');
+  ctx.beginPath();
+  symbolPath(ctx, symbol, size / 2, size / 2, symbol === 'circle' ? 4.4 : 4,
+    spec.starPoints ?? 5);
+  ctx.lineJoin = 'round';
+  if (symbol === 'cross') {
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (keyline) {
+      ctx.strokeStyle = keyline;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
+  return canvas;
+}
+
+/**
+ * A layer split by `group=` gets a heading, one toggle row per category, and an
+ * all/none shortcut. A layer without groups (the common case: one `.points()` call,
+ * one kind of thing) is a single row -- swatch, name, live count -- that toggles the
+ * whole layer (`layer.visible`); no heading repeating the same name, no button
+ * duplicating the row. Either way a row that is off fades rather than disappearing.
  */
 function buildPointLegend(layer, spec, inks, render) {
-  const wrap = el('div', 'dtm-legend-group');
-  const head = el('div', 'dtm-legend-grouphead');
-  if (spec.legend?.title) head.append(el('h3', null, escapeHtml(spec.legend.title)));
-  const allBtn = el('button', 'dtm-legend-all', 'none');
-  head.append(allBtn);
-  wrap.append(head);
+  const hasCategories = Object.keys(layer.categories ?? {}).length > 0;
+  const wrap = el('div', hasCategories ? 'dtm-legend-group' : 'dtm-legend-single');
+  let allBtn = null;
+  if (hasCategories) {
+    const head = el('div', 'dtm-legend-grouphead');
+    if (spec.legend?.title) head.append(el('h3', null, escapeHtml(spec.legend.title)));
+    allBtn = el('button', 'dtm-legend-all', 'none');
+    head.append(allBtn);
+    wrap.append(head);
+  }
 
   const list = el('ul', 'dtm-legend-list');
   wrap.append(list);
+  const keyline = layer.options?.keyline ?? null;
 
   // Totals are of the whole dataset; the live count beside each row is of what is
   // showing NOW, which under lifespan:'since' means "how many had already formed by
@@ -776,17 +815,16 @@ function buildPointLegend(layer, spec, inks, render) {
   const rows = [];
   const countEls = {};
   const showCounts = spec.legend?.counts !== false;
-  const hasCategories = Object.keys(layer.categories ?? {}).length > 0;
 
   function addRow(id, label, ink, total, isOn, setOn) {
     const li = el('li');
-    li.innerHTML = `<span class="dtm-swatch dtm-swatch-sym">`
-      + `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">`
-      + `<circle cx="7" cy="7" r="4.4" fill="${escapeHtml(ink)}"/></svg></span>`
-      + `<span>${escapeHtml(label)}`
+    const swatch = el('span', 'dtm-swatch dtm-swatch-sym');
+    swatch.append(symbolSwatch(spec, ink, keyline));
+    li.append(swatch);
+    li.insertAdjacentHTML('beforeend', `<span>${escapeHtml(label)}`
       + (showCounts ? `<span class="dtm-legend-count"> · 0</span>` : '')
-      + `</span>`;
-    li.title = `${total} in the dataset`;
+      + `</span>`);
+    li.title = `${total} in the dataset -- click to show/hide`;
     if (showCounts) countEls[id] = li.querySelector('.dtm-legend-count');
 
     li.addEventListener('click', () => {
@@ -816,18 +854,20 @@ function buildPointLegend(layer, spec, inks, render) {
   }
 
   function syncAll() {
-    allBtn.textContent = rows.some((r) => r.isOn()) ? 'none' : 'all';
+    if (allBtn) allBtn.textContent = rows.some((r) => r.isOn()) ? 'none' : 'all';
   }
 
-  allBtn.addEventListener('click', () => {
-    const anyOn = rows.some((r) => r.isOn());
-    for (const r of rows) {
-      r.setOn(!anyOn);
-      r.li.classList.toggle('is-off', anyOn);
-    }
-    render();
-    syncAll();
-  });
+  if (allBtn) {
+    allBtn.addEventListener('click', () => {
+      const anyOn = rows.some((r) => r.isOn());
+      for (const r of rows) {
+        r.setOn(!anyOn);
+        r.li.classList.toggle('is-off', anyOn);
+      }
+      render();
+      syncAll();
+    });
+  }
   syncAll();
 
   return {

@@ -239,6 +239,12 @@
 
 .dtm-legend-group { margin-top: 0.5rem; }
 
+/* Ungrouped layers are one row each; consecutive ones read as a single list. */
+.dtm-legend-single { margin-top: 0.1rem; }
+.dtm-legend-single .dtm-legend-list { margin-bottom: 0; }
+.dtm-legend-single:has(+ :not(.dtm-legend-single)) .dtm-legend-list { margin-bottom: 0.6rem; }
+.dtm-swatch-sym canvas { display: block; }
+
 .dtm-legend-grouphead {
   display: flex;
   align-items: baseline;
