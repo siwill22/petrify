@@ -251,10 +251,17 @@ function parseHash(hash) {
  *
  * @param recipe  the view record (see SCHEMA.md, "Explorer recipe")
  * @param root    an element to fill; it is emptied first
+ * @param opts.legendExtra  an element inserted first in the legend panel, ahead
+ *                of the provenance/credit rows -- the hook `model-switch.js`
+ *                mounts a reconstruction-model `<select>` into, so a page with
+ *                `recipe.reconstructions` gets it without a second UI convention.
  * @returns       { globe, layers, setTime, render, recipe } for anything a page
- *                wants to do on top -- the escape hatch that is not `styleJs`
+ *                wants to do on top -- the escape hatch that is not `styleJs`.
+ *                `globe.state` (lon/lat/zoom/age) is the live camera/clock, for
+ *                a caller (e.g. a reconstruction-model swap) that remounts into
+ *                the same `root` and wants to carry the view forward.
  */
-export async function mountExplorer(recipe, root) {
+export async function mountExplorer(recipe, root, opts = {}) {
   if (recipe.explorer !== 1) {
     throw new Error(`unsupported explorer recipe version ${recipe.explorer}`);
   }
@@ -410,9 +417,13 @@ export async function mountExplorer(recipe, root) {
 
   const legendBody = panelSection(dom.legend, recipe.legendTitle ?? 'Legend');
 
-  // First in the panel, not last: a reader who never scrolls the legend should still
-  // see this. It used to sit after the credits, below everything else, which is
-  // exactly why it went unnoticed.
+  // Ahead of even provenance: a reconstruction-model switcher is a statement about
+  // what the whole map currently shows, closer to the header than to a credit line.
+  if (opts.legendExtra) legendBody.append(opts.legendExtra);
+
+  // First in the panel (after any model switcher), not last: a reader who never
+  // scrolls the legend should still see this. It used to sit after the credits,
+  // below everything else, which is exactly why it went unnoticed.
   if (recipe.provenance) legendBody.append(buildProvenance(recipe.provenance, root));
 
   if (series && boundarySpec.legend !== false) {

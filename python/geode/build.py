@@ -46,7 +46,7 @@ class Builder:
         self.view = view
         self.cache = cache or Cache()
         self.quiet = quiet
-        self._model = None
+        self._models = {}
         self._series_key = None
 
     def log(self, message):
@@ -55,30 +55,39 @@ class Builder:
 
     @property
     def model(self):
-        """The loaded reconstruction model, fetched once per export.
+        """The primary model's loaded reconstruction (today's single-model callers)."""
+        return self.model_for(self.view.reconstruction)
 
-        Deliberately lazy: a rebuild where every layer is a cache hit never touches
-        gprm at all, which is what makes re-exporting after a colour change fast.
+    def model_for(self, model_name):
+        """The loaded reconstruction model for `model_name`, fetched once per export.
+
+        Deliberately lazy and cached per name: a rebuild where every layer is a
+        cache hit never touches gprm at all (single-model case, unchanged), and a
+        multi-model export only loads each model once regardless of how many
+        layers reference it.
         """
-        if self._model is None:
-            self.log("loading {}".format(self.view.reconstruction))
-            self._model = _petrify().load_model(self.view.reconstruction)
-        return self._model
+        if model_name not in self._models:
+            self.log("loading {}".format(model_name))
+            self._models[model_name] = _petrify().load_model(model_name)
+        return self._models[model_name]
 
-    def _base(self):
-        return {"model": self.view.reconstruction, "start": self.view.start,
-                "end": self.view.end, "step": self.view.step}
+    def _base(self, model_name=None):
+        model_name = model_name or self.view.reconstruction
+        return {"model": model_name,
+                "anchor_plate": self.view.anchor_plates.get(model_name, 0),
+                "start": self.view.start, "end": self.view.end, "step": self.view.step}
 
     # -- boundaries and velocities ------------------------------------------
 
-    def series(self, tessellate=0.5, healpix_n=8, delta_time=1.0):
+    def series(self, tessellate=0.5, healpix_n=8, delta_time=1.0, model_name=None):
         """Boundary frames and velocity frames, in ONE cache entry.
 
         They are exported together because they are computed together: resolving the
         topologies at a timestep is the expensive part, and both outputs fall out of
         it. Keying them separately would mean resolving every timestep twice.
         """
-        params = dict(self._base(), tessellate=tessellate, healpix_n=healpix_n,
+        model_name = model_name or self.view.reconstruction
+        params = dict(self._base(model_name), tessellate=tessellate, healpix_n=healpix_n,
                       delta_time=delta_time)
         key = key_for("series", params)
         self._series_key = key
@@ -92,7 +101,7 @@ class Builder:
             self.view.start, self.view.end))
         out = self.cache.begin(key)
         _petrify().export_series(
-            model_name=self.view.reconstruction,
+            model_name=model_name,
             start=self.view.start, end=self.view.end, step=self.view.step,
             tessellate=tessellate, healpix_n=healpix_n, delta_time=delta_time,
             out_dir=out, quiet=self.quiet)
@@ -101,8 +110,9 @@ class Builder:
 
     # -- polygons ------------------------------------------------------------
 
-    def polygons(self, which="continents", tolerance=0.02):
-        params = dict(self._base(), which=which, tolerance=tolerance)
+    def polygons(self, which="continents", tolerance=0.02, model_name=None):
+        model_name = model_name or self.view.reconstruction
+        params = dict(self._base(model_name), which=which, tolerance=tolerance)
         key = key_for("polygons", params)
 
         if self.cache.hit(key):
@@ -112,27 +122,39 @@ class Builder:
         self.log("  {}: building".format(which))
         out = self.cache.begin(key)
         _petrify().export_polygons(
-            model_name=self.view.reconstruction, model=self.model,
+            model_name=model_name, model=self.model_for(model_name),
             start=self.view.start, end=self.view.end, step=self.view.step,
+            anchor_plate=self.view.anchor_plates.get(model_name, 0),
             which=which, tolerance=tolerance, out_dir=out, quiet=self.quiet)
         self.cache.finish(key, params)
         return out
 
     # -- points --------------------------------------------------------------
 
-    def points(self, spec):
+    def points(self, spec, model_name=None):
         """Reconstruct one point layer.
 
         The cache key covers the reconstruction parameters AND the data itself --
         the exact lon/lat/age values and the set of carried fields. Change a filter
         upstream and this correctly misses; change a colour and it correctly hits.
         """
+        model_name = model_name or self.view.reconstruction
         frame = spec["_frame"]
         fields = spec["_fields"]
         plate_id_field = spec.get("_plate_id_field")
+        if isinstance(plate_id_field, dict):
+            # A compilation's own plate ids are usually native to ONE model (the one
+            # it was built/QA'd against) -- trusting them for a DIFFERENT model in a
+            # multi-model view would apply one model's plate numbering to another
+            # model's rotation file, which is wrong, not just imprecise. `plate_id=`
+            # as a `{model_name: column}` dict says exactly which model(s) the
+            # override is valid for; any model not named falls back to ordinary
+            # point-in-polygon partitioning, same as no override at all.
+            plate_id_field = plate_id_field.get(model_name)
+        partition_polygons = self.view.partition_polygons.get(model_name, "static")
         fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"], plate_id_field)
-        params = dict(self._base(), fields=[f[0] for f in fields],
-                      data=fingerprint, rows=len(frame))
+        params = dict(self._base(model_name), fields=[f[0] for f in fields],
+                      polygons=partition_polygons, data=fingerprint, rows=len(frame))
         key = key_for("points", params)
 
         if self.cache.hit(key):
@@ -142,8 +164,9 @@ class Builder:
         self.log("  points: assigning plates to {} rows".format(len(frame)))
         out = self.cache.begin(key)
         _petrify().export_points(
-            frame, model_name=self.view.reconstruction, model=self.model,
+            frame, model_name=model_name, model=self.model_for(model_name),
             start=self.view.start, end=self.view.end, step=self.view.step,
+            anchor_plate=self.view.anchor_plates.get(model_name, 0),
             # `rotations` ships present-day geometry plus a rotation series per
             # plate; `trajectory` ships a position per point per time. With points
             # in the thousands on a few hundred plates, rotations is smaller by
@@ -152,7 +175,7 @@ class Builder:
             transport="rotations",
             fields=fields, categories=spec["_categories"],
             meta=spec["_meta"] or None, out_dir=out, quiet=self.quiet,
-            plate_id_field=plate_id_field)
+            plate_id_field=plate_id_field, polygons=partition_polygons)
         self.cache.finish(key, params)
         return out
 

@@ -268,6 +268,25 @@
   cursor: pointer;
 }
 
+/* model-switch.js's reconstruction-model <select> -- first in the legend panel,
+   so it reads as "what the whole map is currently drawn on", not one layer's own
+   toggle among the others below it. */
+.dtm-model-select {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--dtm-rule);
+  border-radius: 5px;
+  background: var(--dtm-panel);
+  color: var(--dtm-ink);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.dtm-model-select:hover { border-color: var(--dtm-ink-dim); }
+
 .dtm-legend-all:hover,
 .dtm-velocity-toggle:hover { color: var(--dtm-ink); border-color: var(--dtm-ink-dim); }
 

@@ -18,6 +18,7 @@ import os
 import shutil
 
 from .build import Builder
+from .view import MODEL_CREDITS
 from . import script as view_script
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,12 +36,15 @@ INDEX_HTML = '''<!doctype html>
 <body>
 <div id="app"></div>
 <script type="module">
-import {{ mountExplorer }} from './lib/explorer.js';
+import {{ mountReconstructionSwitcher }} from './lib/model-switch.js';
 
 const app = document.getElementById('app');
 try {{
   const recipe = await (await fetch('view.json')).json();
-  await mountExplorer(recipe, app);
+  // Degrades straight to mountExplorer for a recipe with no reconstructions[]
+  // (today's every single-model page) -- this import replaces mountExplorer's
+  // own here only, never a behaviour change for a single-model recipe.
+  await mountReconstructionSwitcher(recipe, app);
 }} catch (err) {{
   console.error(err);
   app.textContent = 'Could not load: ' + err.message;
@@ -100,7 +104,30 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
 
     # -- data ---------------------------------------------------------------
 
-    layers = []
+    # One model (today's every existing page): output layout is exactly what it
+    # always was, `data/<file>.json`, byte-for-byte. More than one: every model
+    # gets its own subdirectory, `data/<model-slug>/<file>.json`, and the recipe
+    # gains a `reconstructions[]` catalog (see below) a page can offer a live
+    # toggle over -- `layers[]` itself stays the primary/initial model's own URLs,
+    # the shared template every layer's colour/symbol/hover/legend lives in once
+    # regardless of how many models are exported.
+    model_names = view.reconstructions
+    multi = len(model_names) > 1
+
+    def _slug(name):
+        return name.lower()
+
+    def _model_dir(name):
+        return os.path.join(data_dir, _slug(name)) if multi else data_dir
+
+    def _model_url(name, filename):
+        return "data/{}/{}".format(_slug(name), filename) if multi else \
+            "data/{}".format(filename)
+
+    # Boundaries/velocities are not multi-model aware yet -- nothing in this
+    # viewer uses them, and a per-model series is 13-76 MB per the already-shipped
+    # reconstructionGroup viewer's own measurements, real scope for a future pass,
+    # not silently assumed to work here. Always built on the primary model.
     needs_series = any(lyr["kind"] in ("boundaries", "velocities")
                        for lyr in view._layers)
     series_dir = None
@@ -109,49 +136,78 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
         v = next((l for l in view._layers if l["kind"] == "velocities"), {})
         series_dir = builder.series(tessellate=b.get("tessellate", 0.5),
                                     healpix_n=v.get("healpixN", 8),
-                                    delta_time=v.get("deltaTime", 1.0))
+                                    delta_time=v.get("deltaTime", 1.0),
+                                    model_name=view.reconstruction)
 
-    for spec in view._layers:
-        kind = spec["kind"]
-        out = _public(spec)
+    layers = []
+    reconstructions = []
 
-        if kind == "ocean":
-            layers.append(out)
+    for model_name in model_names:
+        model_dir = _model_dir(model_name)
+        os.makedirs(model_dir, exist_ok=True)
+        primary = model_name == view.reconstruction
+        layer_urls = {}
 
-        elif kind == "continents":
-            src = builder.polygons(which=spec["which"], tolerance=spec["tolerance"])
-            name = "{}.json".format(spec["which"])
-            _copy(os.path.join(src, name), os.path.join(data_dir, name))
-            out["url"] = "data/{}".format(name)
-            layers.append(out)
+        for spec in view._layers:
+            kind = spec["kind"]
+            out = _public(spec)
 
-        elif kind == "boundaries":
-            _copy(os.path.join(series_dir, "boundaries.json"),
-                  os.path.join(data_dir, "boundaries.json"))
-            _copy(os.path.join(series_dir, "frames"),
-                  os.path.join(data_dir, "frames"))
-            out["url"] = "data/boundaries.json"
-            layers.append(out)
+            if kind == "ocean":
+                if primary:
+                    layers.append(out)
+                continue
 
-        elif kind == "velocities":
-            _copy(os.path.join(series_dir, "velocities.json"),
-                  os.path.join(data_dir, "velocities.json"))
-            out["url"] = "data/velocities.json"
-            layers.append(out)
+            elif kind == "continents":
+                src = builder.polygons(which=spec["which"], tolerance=spec["tolerance"],
+                                       model_name=model_name)
+                name = "{}.json".format(spec["which"])
+                _copy(os.path.join(src, name), os.path.join(model_dir, name))
+                out["url"] = _model_url(model_name, name)
+                layer_urls[spec["id"]] = out["url"]
 
-        elif kind == "points":
-            src = builder.points(spec)
-            name = "{}.json".format(spec["id"])
-            _copy(os.path.join(src, "points.json"), os.path.join(data_dir, name))
-            out["url"] = "data/{}".format(name)
-            if "_style_js_path" in spec:
-                _copy(spec["_style_js_path"],
-                      os.path.join(data_dir, spec["styleJs"]))
-                out["styleJs"] = "data/{}".format(spec["styleJs"])
-            layers.append(out)
+            elif kind == "boundaries":
+                if not primary:
+                    continue
+                _copy(os.path.join(series_dir, "boundaries.json"),
+                      os.path.join(model_dir, "boundaries.json"))
+                _copy(os.path.join(series_dir, "frames"),
+                      os.path.join(model_dir, "frames"))
+                out["url"] = _model_url(model_name, "boundaries.json")
+                layer_urls["boundaries"] = out["url"]
 
-        else:
-            raise ValueError("cannot export layer kind {!r}".format(kind))
+            elif kind == "velocities":
+                if not primary:
+                    continue
+                _copy(os.path.join(series_dir, "velocities.json"),
+                      os.path.join(model_dir, "velocities.json"))
+                out["url"] = _model_url(model_name, "velocities.json")
+                layer_urls["velocities"] = out["url"]
+
+            elif kind == "points":
+                src = builder.points(spec, model_name=model_name)
+                name = "{}.json".format(spec["id"])
+                _copy(os.path.join(src, "points.json"), os.path.join(model_dir, name))
+                out["url"] = _model_url(model_name, name)
+                layer_urls[spec["id"]] = out["url"]
+                if "_style_js_path" in spec:
+                    # Not model data -- the same style hook applies under every
+                    # model, so it is written once, at the page's top level.
+                    _copy(spec["_style_js_path"],
+                          os.path.join(data_dir, spec["styleJs"]))
+                    out["styleJs"] = "data/{}".format(spec["styleJs"])
+
+            else:
+                raise ValueError("cannot export layer kind {!r}".format(kind))
+
+            if primary:
+                layers.append(out)
+
+        if multi:
+            reconstructions.append({
+                "id": _slug(model_name), "label": MODEL_CREDITS.get(model_name, model_name),
+                "anchorPlate": view.anchor_plates.get(model_name, 0),
+                "layerUrls": layer_urls,
+            })
 
     # -- background raster ----------------------------------------------------
 
@@ -239,6 +295,9 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
                             "sources": sources}
     if heatmap:
         recipe["distanceHeatmap"] = heatmap
+    if multi:
+        recipe["reconstructions"] = reconstructions
+        recipe["initialReconstruction"] = _slug(view.reconstruction)
     if background:
         recipe["background"] = background
 

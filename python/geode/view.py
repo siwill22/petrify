@@ -131,9 +131,28 @@ class View:
 
     def __init__(self, reconstruction="Merdith2021", times=(0, 250, 1),
                  projection="orthographic", centre=(0, 0), zoom=1.0,
-                 start_time=None, title=None, subtitle=None, ocean=True):
+                 start_time=None, title=None, subtitle=None, ocean=True,
+                 anchor_plate=0, anchor_plates=None, partition_polygons=None):
         start, end, step = times
-        self.reconstruction = reconstruction
+        # A single model, unchanged, or a list of models sharing one view -- the
+        # live reconstruction-model toggle a page can offer (see `explorer.js`'s
+        # model-switch panel). `self.reconstruction` stays the first/primary model
+        # so every existing single-model read site (Builder.model, MODEL_CREDITS,
+        # recipe["credit"], script.py) needs no changes at all.
+        self.reconstructions = ([reconstruction] if isinstance(reconstruction, str)
+                                else list(reconstruction))
+        self.reconstruction = self.reconstructions[0]
+        # Per-model overrides, keyed by reconstruction name. `anchor_plate` is the
+        # single-model shorthand (applies to the primary model only, unless the
+        # caller names it again in `anchor_plates`); petrify's own export functions
+        # already take an `anchor_plate` parameter -- this just finally exposes it
+        # above Builder, which always used the implicit default 0 before.
+        self.anchor_plates = dict(anchor_plates or {})
+        self.anchor_plates.setdefault(self.reconstruction, anchor_plate)
+        # Point-in-polygon partitioning source per model: 'static' (default) or
+        # 'continents', for a model (e.g. Muller2022) whose ReconstructionModel has
+        # continent polygons but no static polygons.
+        self.partition_polygons = dict(partition_polygons or {})
         self.start = int(start)
         self.end = int(end)
         self.step = int(step)
@@ -146,7 +165,7 @@ class View:
         # legible band of whatever is currently active.
         self.start_time = (float(start_time) if start_time is not None
                            else round(self.start + (self.end - self.start) * 0.3))
-        self.title = title or "{} reconstruction".format(reconstruction)
+        self.title = title or "{} reconstruction".format(self.reconstruction)
         self.subtitle = subtitle
         self.theme_id = DEFAULT_THEME
         self.caption_text = None
@@ -163,7 +182,14 @@ class View:
         self._notebook_steps = None
         self._notebook_figures = None
 
-        self._record("globe", reconstruction=reconstruction,
+        self._record("globe",
+                     reconstruction=(self.reconstruction if len(self.reconstructions) == 1
+                                     else self.reconstructions),
+                     anchor_plate=(_unless(self.anchor_plates.get(self.reconstruction, 0), 0)
+                                   if len(self.reconstructions) == 1 else None),
+                     anchor_plates=(self.anchor_plates
+                                    if len(self.reconstructions) > 1 else None),
+                     partition_polygons=self.partition_polygons or None,
                      times=(self.start, self.end, self.step),
                      projection=_unless(projection, "orthographic"),
                      centre=_unless(self.centre, (0, 0)),
@@ -282,7 +308,7 @@ class View:
         `tolerance` is a simplification in degrees; the default is about one device
         pixel at 4x zoom on a globe of this size, so the saving is invisible.
         """
-        self._layers.append({"kind": "continents", "which": which,
+        self._layers.append({"kind": "continents", "id": which, "which": which,
                              "tolerance": tolerance, "fillAlpha": alpha,
                              "lineWidth": line_width})
         self._record("continents", which=_unless(which, "continents"),
@@ -362,6 +388,15 @@ class View:
         That is how a marker fixed in the absolute/mantle frame (never reconstructed
         by any plate motion) is asked for: a constant plate-id column of zeros.
 
+        On a view built on more than one reconstruction model, `plate_id` may
+        instead be `{model_name: column_or_None}` -- a compilation's plate ids are
+        usually native to the one model they were built/QA'd against, and applying
+        them under a DIFFERENT model's rotation file is wrong, not just imprecise
+        (one model's plate numbering fed to another model's Euler poles). Name only
+        the model(s) the column is valid for; any other model in the view falls back
+        to ordinary partitioning, exactly as if `plate_id` had been left `None` for
+        it. A plain column name (today's behaviour) still applies to every model.
+
         `symbol` is the whole layer's marker shape (`'circle'` the default,
         `'square'`, `'diamond'`, `'triangle'`, `'triangle-down'`, `'hexagon'`,
         `'cross'`, `'star'`) -- a per-layer choice, not per-category; a page
@@ -407,7 +442,11 @@ class View:
         need(lat, "latitude")
         if group is not None:
             need(group, "group")
-        if plate_id is not None:
+        if isinstance(plate_id, dict):
+            for col in plate_id.values():
+                if col is not None:
+                    need(col, "plate_id")
+        elif plate_id is not None:
             need(plate_id, "plate_id")
 
         # The age, longitude and latitude columns are written by the exporter under
@@ -428,10 +467,25 @@ class View:
 
         fields = [(payload_key(c), c) for c in extra]
         # points_from_dataframe reads fixed 'Longitude'/'Latitude'/'Age' columns. The
-        # rename is internal; the caller's frame is untouched.
-        prepared = df.rename(columns={lon: "Longitude", lat: "Latitude"})
+        # rename is internal; the caller's frame is untouched (this operates on
+        # `prepared`, never `df` itself).
+        #
+        # A source frame that already carries a column under one of those THREE
+        # exact names -- distinct from the column being renamed into it, e.g. a
+        # gprm loader's own 'Longitude'/'Latitude' alongside a caller-computed
+        # 'fixed_lon'/'fixed_lat' picked via lon=/lat= instead -- must be dropped
+        # first. Otherwise the rename produces two columns sharing one name, and
+        # every later `row[lon_field]` lookup in points_from_dataframe returns a
+        # Series, not a scalar: silently wrong at best, a bare TypeError at worst.
+        prepared = df
+        renames = {lon: "Longitude", lat: "Latitude"}
         if age is not None:
-            prepared = prepared.rename(columns={age: "Age"})
+            renames[age] = "Age"
+        collisions = [target for src, target in renames.items()
+                     if src != target and target in prepared.columns]
+        if collisions:
+            prepared = prepared.drop(columns=collisions)
+        prepared = prepared.rename(columns=renames)
 
         if lifespan == "range" and window is not None:
             # `from`/`to` are what the renderer's `range` lifespan actually reads

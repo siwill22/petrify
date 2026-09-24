@@ -6,6 +6,95 @@ decides whether to update by reading this file, not by reading the diff.
 
 ## Unreleased
 
+**A live, in-browser reconstruction-model toggle** -- the LLSVP viewer's next
+ask, once kimberlites and an alternative LIP catalogue (gprm's same-day
+addition of `Rocks.Kimberlites('Tappe2018')` and `Seafloor.
+LargeIgneousProvinces('Johansson_centroids')`) needed a plate-id scheme
+neither of the view's models natively assigns. First time the Python-first
+`geode`/petrify stack has exported more than one reconstruction model for
+one view; the older, non-Python-first `viewer/src/reconstructionGroup/`
+already does this for both polygons and points and is the pattern mirrored
+here (not copied -- a different rendering stack: persistent classes there,
+`explorer.js`'s closure-based `mountExplorer()` here).
+
+- **`View`/`geode.globe()` accept `reconstruction=` as a list**, not just a
+  string. `self.reconstruction` stays the first/primary model, so every
+  existing single-model call site (`Builder.model`, `MODEL_CREDITS`,
+  `recipe["credit"]`, `script.py`) needed zero changes. New
+  `anchor_plates=`/`partition_polygons=` are `{model_name: value}`
+  overrides; `anchor_plate=` is the single-model shorthand.
+- **An anchor-plate correctness gap, found and fixed in the same pass**:
+  `petrify.export`'s `export_polygons`/`export_points`/`build_points` have
+  always accepted `anchor_plate`, but nothing above `Builder` ever set it to
+  anything but the implicit default 0 -- including for Torsvik & Cocks
+  (2017), whose own established convention elsewhere in this codebase
+  (`viewer/src/generated/reconstructionGroupConfig.ts`, `anchorPlates: {
+  torsvikcocks2017: 1 }`) is anchor **1**. Checked directly, not assumed: a
+  real plate's rotation at 180 Ma differs measurably between anchor 0 and 1
+  in this model, and a rendered comparison shows ~28% of the globe's pixels
+  changing by more than a rounding difference. `Builder._base()` now
+  includes `anchor_plate` in its cache key too, so a re-export cannot
+  silently reuse a differently-anchored cache entry.
+- **`export_points()` gains `polygons=` ('static' default, or 'continents'),
+  finally threaded through to `points_from_dataframe()`, which has accepted
+  it all along.** Required for Müller et al. (2022): confirmed directly
+  against gprm's `fetch_Muller2022` source -- it populates continent
+  polygons but never calls `add_static_polygons`, so partitioning against
+  the default has nothing to test points against for that model.
+- **`plate_id=` may be `{model_name: column}`, not just a column name.** A
+  compilation's plate ids are usually native to the one model they were
+  built/QA'd against (Torsvik & Cocks 2016's `CEED6` LIPs to Torsvik & Cocks
+  2017, say) -- applying them under a DIFFERENT model's rotation file is
+  wrong, not just imprecise, since it feeds one model's plate numbering to
+  another model's Euler poles. Naming only the model(s) a column is valid
+  for means every other model in the view still gets ordinary partitioning,
+  exactly as if no override had been given.
+- **Fix: `View.points()`'s internal lon/lat/age rename could silently
+  collide with a source frame's own same-named column.** `prepared =
+  df.rename(columns={lon: "Longitude", lat: "Latitude"})` assumed the
+  target names were free; a source frame that already carries a column
+  literally named `'Longitude'`/`'Latitude'`/`'Age'` -- e.g. a raw gprm
+  loader's own columns, plotted via a caller-computed `lon=`/`lat=` pair
+  instead (exactly the LLSVP viewer's kimberlite mantle-frame star: gprm's
+  `Rocks.Kimberlites` already has real `Longitude`/`Latitude` columns, and
+  the star is drawn from separately-computed `fixed_lon`/`fixed_lat`) --
+  ended up with two columns sharing one name, and every later
+  `row[lon_field]` lookup in `points_from_dataframe` returned a Series, not
+  a scalar (a bare `TypeError`, not a silent wrong answer, but still found
+  by hitting it, not by inspection). Now drops a colliding pre-existing
+  column before renaming. Three new tests in
+  `python/tests/test_view_points.py` (lon/lat collision, age collision, and
+  the ordinary no-collision case is provably unaffected).
+- Export layout: one model exported (every existing page) is byte-for-byte
+  unchanged, `data/<file>.json`. More than one: every model's own
+  `data/<model-slug>/<file>.json`, plus a `reconstructions[]` catalog
+  (`{id, label, anchorPlate, layerUrls}`) and `initialReconstruction` in the
+  recipe alongside the existing `layers[]` (unchanged in shape -- the
+  primary model's own URLs, still the one place every layer's
+  colour/symbol/hover/legend lives). Boundaries/velocities are explicitly
+  NOT multi-model aware yet -- nothing in this viewer uses them, and a
+  per-model series costs 13-76 MB per the reconstructionGroup viewer's own
+  measurements, real future scope rather than assumed to work.
+- **New `js/model-switch.js`, `mountReconstructionSwitcher(recipe, root)`.**
+  A drop-in replacement for `mountExplorer` that degrades straight to it
+  for a recipe with no `reconstructions[]` (every existing page) or fewer
+  than two. For a multi-model recipe: a `<select>` mounted into the legend
+  panel (via two small, additive `mountExplorer` hooks -- `opts.legendExtra`
+  and reading `globe.state` for the live camera/clock), and on change, a
+  FULL REMOUNT into the same root with the new model's layer URLs swapped
+  in and camera/time carried forward as values. Chosen over a surgical
+  in-place patch (mirroring `ReconstructionGroupInstance` exactly): this
+  viewer has no boundaries/velocities layers to avoid re-fetching, and a
+  full remount touches `explorer.js`'s shared draw-loop/legend/hover
+  closures not at all, where a surgical patch would have to rewrite them.
+  `index.html`'s template now imports `mountReconstructionSwitcher` in
+  place of `mountExplorer` directly -- a single-model recipe's behaviour is
+  unaffected.
+- **`symbolPath()`'s `'star'` case**, `restyle()`'s defaults, and
+  `explorer.js`'s `loadLayer()` all gained `starPoints`/`symbol` plumbing
+  two commits ago; this pass's `'diamond'` symbol (kimberlites' plate-frame
+  marker) needed none of that repeated -- already generic.
+
 **Fix: `PolygonLayer` under Robinson no longer draws stray lines for a ring
 crossing the seam.** Found while building the LLSVP viewer (`.continents()`
 alone, Robinson, any centre) — a ring crossing the antimeridian relative to

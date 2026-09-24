@@ -50,7 +50,8 @@ __all__ = [
 
 def globe(reconstruction="Merdith2021", times=(0, 250, 1),
           projection="orthographic", centre=(0, 0), zoom=1.0, start_time=None,
-          title=None, subtitle=None, ocean=True):
+          title=None, subtitle=None, ocean=True, anchor_plate=0,
+          anchor_plates=None, partition_polygons=None):
     """Start a view.
 
     `times` is `(start, end, step)` in Ma -- deep time at the larger number, the
@@ -63,10 +64,21 @@ def globe(reconstruction="Merdith2021", times=(0, 250, 1),
 
     `centre` is (lon, lat) for the opening view; `start_time` is the age it opens at,
     defaulting to about a third of the way into the range.
+
+    `reconstruction` is a model name (today's single-model page, unchanged) or a
+    list of names -- a page built on more than one model exports every one of them
+    and offers a live, in-browser toggle between them, rather than picking one at
+    build time. `anchor_plate` is the reference plate held fixed for the single/
+    primary model; `anchor_plates`/`partition_polygons` are `{model_name: value}`
+    overrides for a specific model in a multi-model list (`partition_polygons`
+    is 'static', the default, or 'continents', for a model whose
+    ReconstructionModel has continent polygons but no static polygons -- see
+    `View.__init__`).
     """
     return View(reconstruction=reconstruction, times=times, projection=projection,
                 centre=centre, zoom=zoom, start_time=start_time, title=title,
-                subtitle=subtitle, ocean=ocean)
+                subtitle=subtitle, ocean=ocean, anchor_plate=anchor_plate,
+                anchor_plates=anchor_plates, partition_polygons=partition_polygons)
 
 
 def themes(lightness=None, temperature=None):

@@ -136,7 +136,7 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
                   anchor_plate=0, transport="rotations", fields=(), categories=None,
                   meta=None, decimals=2, out_dir="data", filename=None, model=None,
                   quiet=False, partition_lon_field=None, partition_lat_field=None,
-                  plate_id_field=None):
+                  plate_id_field=None, polygons="static"):
     """Reconstruct a point dataset and write it as one JSON file.
 
     `transport` may also be 'both', which writes points.json (rotations) alongside
@@ -150,13 +150,18 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
     `plate_id_field` also passes straight through -- see `points_from_dataframe`'s
     docstring for why a caller would want to trust an existing plate id over one
     recovered by partitioning.
+
+    `polygons` ('static', the default, or 'continents') also passes straight through --
+    a model whose ReconstructionModel has continent polygons but no static polygons
+    (e.g. gprm's `fetch_Muller2022`, which never calls `add_static_polygons`) needs
+    'continents' or partitioning has nothing to test points against.
     """
     model = model or load_model(model_name)
     times = list(range(start, end + 1, step))
     os.makedirs(out_dir, exist_ok=True)
 
     records, unassigned = points_from_dataframe(
-        gdf, model, fields=fields,
+        gdf, model, fields=fields, polygons=polygons,
         partition_lon_field=partition_lon_field, partition_lat_field=partition_lat_field,
         plate_id_field=plate_id_field)
     if not quiet:
