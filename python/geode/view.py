@@ -397,6 +397,11 @@ class View:
         to ordinary partitioning, exactly as if `plate_id` had been left `None` for
         it. A plain column name (today's behaviour) still applies to every model.
 
+        `lon`/`lat` may likewise be `{model_name: column}` dicts (both, naming every
+        model in the view) -- for positions that are themselves model-dependent,
+        e.g. an eruption-age paleoposition held fixed in the mantle frame, which each
+        model places differently.
+
         `symbol` is the whole layer's marker shape (`'circle'` the default,
         `'square'`, `'diamond'`, `'triangle'`, `'triangle-down'`, `'hexagon'`,
         `'cross'`, `'star'`) -- a per-layer choice, not per-category; a page
@@ -436,6 +441,21 @@ class View:
 
         if age is not None:
             need(age, "age")
+        positions = None
+        if isinstance(lon, dict) or isinstance(lat, dict):
+            if not (isinstance(lon, dict) and isinstance(lat, dict)) \
+                    or set(lon) != set(lat):
+                raise ValueError("lon= and lat= must both be {model: column} dicts "
+                                 "with the same models, or both plain column names")
+            missing = [m for m in self.reconstructions if m not in lon]
+            if missing:
+                raise KeyError("lon=/lat= name no column for model(s) {}".format(
+                    ", ".join(missing)))
+            for m in lon:
+                need(lon[m], "longitude ({})".format(m))
+                need(lat[m], "latitude ({})".format(m))
+            positions = {m: (lon[m], lat[m]) for m in lon}
+            lon, lat = positions[self.reconstruction]
         lon = lon or _find_column(columns, LON_NAMES, "longitude")
         lat = lat or _find_column(columns, LAT_NAMES, "latitude")
         need(lon, "longitude")
@@ -523,6 +543,7 @@ class View:
             "_frame": prepared,
             "_has_age": age is not None,
             "_plate_id_field": plate_id,
+            "_positions": positions,
             "_meta": {k: v for k, v in
                       {"source": source, "doi": doi, "caption": caption}.items()
                       if v},
@@ -548,8 +569,10 @@ class View:
 
         self._layers.append(spec)
         self._record("points", frame=name or _caller_name(df, "df"), age=age,
-                     lon=_unless(lon, _find_column(columns, LON_NAMES, None)),
-                     lat=_unless(lat, _find_column(columns, LAT_NAMES, None)),
+                     lon=({m: p[0] for m, p in positions.items()} if positions
+                          else _unless(lon, _find_column(columns, LON_NAMES, None))),
+                     lat=({m: p[1] for m, p in positions.items()} if positions
+                          else _unless(lat, _find_column(columns, LAT_NAMES, None))),
                      group=group, labels=labels, colours=colours,
                      lifespan=None if lifespan == "since" else lifespan,
                      window=window, plate_id=plate_id, symbol=symbol,

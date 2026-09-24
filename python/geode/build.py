@@ -151,6 +151,12 @@ class Builder:
             # override is valid for; any model not named falls back to ordinary
             # point-in-polygon partitioning, same as no override at all.
             plate_id_field = plate_id_field.get(model_name)
+        positions = spec.get("_positions")
+        if positions and model_name != self.view.reconstruction:
+            # The frame was renamed around the PRIMARY model's lon/lat columns; every
+            # other model's own columns are still in it under their own names.
+            lon_col, lat_col = positions[model_name]
+            frame = frame.assign(Longitude=frame[lon_col], Latitude=frame[lat_col])
         partition_polygons = self.view.partition_polygons.get(model_name, "static")
         fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"], plate_id_field)
         params = dict(self._base(model_name), fields=[f[0] for f in fields],
