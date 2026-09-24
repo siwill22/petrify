@@ -42,6 +42,15 @@ here (not copied -- a different rendering stack: persistent classes there,
   `anchor_plate=` default (0) is what most consumers should keep using unless
   they have a viewer-specific reason, checked the same way this one now
   documents, not to copy.
+- **Points' rotation tables hold a plate's oldest rotation past the end of its
+  sequence.** Measured: `get_rotation` returns the identity beyond a plate's last
+  pole (not the oldest pole, as two comments here claimed -- corrected), so a
+  point shown there snapped back to its present-day position. Torsvik & Cocks
+  (2017)'s Pacific plate 901 ends at 150 Ma; Shatsky Rise's eruption star jumped
+  ~60 deg at 151 Ma. `_rotation_block` now repeats the oldest defined rotation
+  over a trailing run of identities. Points only (continents unchanged). The
+  geode points cache key carries a `rotations` rule tag, so this re-exports
+  rather than reusing stale tables.
 - **Legend: an ungrouped points layer is one row, not a heading + button.**
   A `.points()` layer without `group=` used to get a heading, an "all"/"none"
   button, and (after the first fix) one row repeating the heading -- the button

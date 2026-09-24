@@ -156,8 +156,9 @@ def points_from_dataframe(gdf, model, lon_field="Longitude", lat_field="Latitude
     digitized in present-day space and rotated backward, so it is always crust that
     survives to today, but that same construction means the polygon (and the plate id it
     hands out) has no meaning before its own begin age. Reconstructing a point older than
-    that silently does not fail: `pygplates` holds the oldest defined rotation pole fixed
-    rather than erroring, so an over-old point just stops moving instead of reporting
+    that silently does not fail: `pygplates` still returns a rotation (the plate's own,
+    while its rotation sequence lasts; the identity beyond it -- see `_rotation_block`),
+    so an over-old point is drawn somewhere plausible-looking instead of reporting
     anything wrong. This is a mechanism, not a policy, the same "export carries WHERE, the
     renderer decides WHEN" split as `age` above -- whether to exclude such a point, flag
     it, or ignore the field entirely is left to the caller. `None` (not a numeric age)
@@ -344,8 +345,16 @@ def _rotation_block(model, plate_ids, times, anchor_plate):
 
     One entry per plate rather than per point: the whole reason this transport wins on
     large datasets is that a thousand deposits on one craton share one rotation.
+
+    Past the oldest time a plate's rotation sequence covers, `get_rotation` returns
+    the IDENTITY, not the oldest pole -- a point shown there snaps back to its
+    present-day position (Torsvik & Cocks 2017's Pacific plate 901 ends at 150 Ma:
+    Shatsky Rise jumped ~60 deg mid-eruption at 151 Ma). So a trailing run of
+    identities after real rotations is filled with the plate's oldest defined
+    rotation: held where the model last put it. Needs ascending `times`.
     """
     rotation_model = model.rotation_model
+    ascending = all(a < b for a, b in zip(times, list(times)[1:]))
     block = {}
     for plate_id in sorted(plate_ids):
         series = []
@@ -353,6 +362,11 @@ def _rotation_block(model, plate_ids, times, anchor_plate):
             rotation = rotation_model.get_rotation(
                 float(time), int(plate_id), anchor_plate_id=anchor_plate)
             series.append(finite_rotation_to_pole_angle(rotation))
+        if ascending and int(plate_id) != int(anchor_plate):
+            defined = [i for i, r in enumerate(series) if r[2] != 0.0]
+            if defined and defined[-1] < len(series) - 1:
+                last = defined[-1]
+                series[last + 1:] = [series[last]] * (len(series) - last - 1)
         block[str(plate_id)] = series
     return block
 

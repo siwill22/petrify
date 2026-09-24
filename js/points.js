@@ -283,11 +283,11 @@ export class PointLayer {
    * Is `time` within the geologically meaningful window of this point's assigned
    * plate? `points_from_dataframe()` exposes `plate_begin_age` (see SCHEMA.md) -- the
    * assigned static polygon's own begin age -- because `pygplates` does not error on
-   * reconstructing a point older than that: it silently holds the plate's oldest
-   * defined rotation pole fixed instead. Left unchecked, an over-old point does not
-   * disappear or complain, it just stops moving, which reads as "this category never
-   * moves" rather than "this assignment stopped being meaningful" (the bug a Geode
-   * consumer hit and reported upstream). A point assigned NO plate at all (`plate_id:
+   * reconstructing a point older than that: it still returns a rotation, so an
+   * over-old point does not disappear or complain, it is just drawn on crust the
+   * model says did not exist yet (the bug a Geode consumer hit and reported
+   * upstream). (Past the end of a plate's rotation SEQUENCE -- a different limit --
+   * pygplates returns the identity; the exporter holds the oldest rotation there.) A point assigned NO plate at all (`plate_id:
    * 0`, `plate_begin_age: null`) has no crust history whatsoever behind it -- valid
    * only at the present day, the same as a beginAge of 0.
    *

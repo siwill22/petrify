@@ -159,8 +159,12 @@ class Builder:
             frame = frame.assign(Longitude=frame[lon_col], Latitude=frame[lat_col])
         partition_polygons = self.view.partition_polygons.get(model_name, "static")
         fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"], plate_id_field)
+        # `rotations` names the exporter's rotation-table rule, so a change to it
+        # (e.g. holding a plate's oldest rotation past the end of its sequence) is a
+        # cache miss rather than a silently stale table.
         params = dict(self._base(model_name), fields=[f[0] for f in fields],
-                      polygons=partition_polygons, data=fingerprint, rows=len(frame))
+                      polygons=partition_polygons, data=fingerprint, rows=len(frame),
+                      rotations="hold-oldest")
         key = key_for("points", params)
 
         if self.cache.hit(key):

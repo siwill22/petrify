@@ -258,3 +258,19 @@ def test_rotations_transport_groups_points_by_the_splits_plate_id(model):
     payload = build_points(model, records, times=[0, 100], transport="rotations")
     assert payload["points"][0]["plate_id"] == PLATE_A
     assert str(PLATE_A) in payload["rotations"]
+
+
+def test_rotation_block_holds_oldest_rotation_past_end_of_sequence():
+    """pygplates returns the IDENTITY past the end of a plate's rotation sequence,
+    which snaps a point back to its present-day position. The exported table must
+    hold the oldest defined rotation there instead (Torsvik & Cocks 2017's Pacific
+    plate ends at 150 Ma; Shatsky Rise jumped mid-eruption)."""
+    from petrify.points import _rotation_block
+
+    model = FakeModel([], [_rotation_feature(PLATE_A, [(0, 90, 0, 0), (10, 0, 0, 20)])])
+    assert model.rotation_model.get_rotation(12.0, PLATE_A).represents_identity_rotation()
+
+    series = _rotation_block(model, [PLATE_A], list(range(0, 16)), 0)[str(PLATE_A)]
+    assert series[10][2] != 0.0
+    assert all(series[t] == series[10] for t in range(11, 16))
+    assert series[0][2] == 0.0  # the genuine present-day identity is untouched
