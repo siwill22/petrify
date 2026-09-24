@@ -23,18 +23,25 @@ here (not copied -- a different rendering stack: persistent classes there,
   `recipe["credit"]`, `script.py`) needed zero changes. New
   `anchor_plates=`/`partition_polygons=` are `{model_name: value}`
   overrides; `anchor_plate=` is the single-model shorthand.
-- **An anchor-plate correctness gap, found and fixed in the same pass**:
+- **`anchor_plate=`/`anchor_plates=` finally exposed above `Builder`**:
   `petrify.export`'s `export_polygons`/`export_points`/`build_points` have
   always accepted `anchor_plate`, but nothing above `Builder` ever set it to
-  anything but the implicit default 0 -- including for Torsvik & Cocks
-  (2017), whose own established convention elsewhere in this codebase
-  (`viewer/src/generated/reconstructionGroupConfig.ts`, `anchorPlates: {
-  torsvikcocks2017: 1 }`) is anchor **1**. Checked directly, not assumed: a
-  real plate's rotation at 180 Ma differs measurably between anchor 0 and 1
-  in this model, and a rendered comparison shows ~28% of the globe's pixels
-  changing by more than a rounding difference. `Builder._base()` now
-  includes `anchor_plate` in its cache key too, so a re-export cannot
-  silently reuse a differently-anchored cache entry.
+  anything but the implicit default 0. `Builder._base()` now includes
+  `anchor_plate` in its cache key too, so a re-export cannot silently reuse a
+  differently-anchored cache entry. **Correction (2026-09-24, same day)**:
+  the LLSVP viewer initially set Torsvik & Cocks (2017) to anchor **1**,
+  reading `reconstructionGroupConfig.ts`'s `anchorPlates: { torsvikcocks2017:
+  1 }` as a general fact about this model. It is not — that config is a
+  display-time correction specific to the Paleomagnetic Poles/GAPWaP viewer
+  (which exports at anchor 0 and applies the anchor as a live client-side
+  reference rotation, purely so a VGP path reads relative to the plate that
+  carried it), not a claim that anchor 1 is this model's "true" frame. Anchor
+  0 vs 1 do give measurably different rotations at 180 Ma (~28% of rendered
+  pixels differ) — that part was correct — but the choice of *which* anchor
+  is still per-viewer, not a global convention; this stack's own
+  `anchor_plate=` default (0) is what most consumers should keep using unless
+  they have a viewer-specific reason, checked the same way this one now
+  documents, not to copy.
 - **`export_points()` gains `polygons=` ('static' default, or 'continents'),
   finally threaded through to `points_from_dataframe()`, which has accepted
   it all along.** Required for Müller et al. (2022): confirmed directly
