@@ -16,6 +16,7 @@ import {
 } from '../js/rotations.js';
 import {
   DEG, lonLatToVec3, vec3ToLonLat, ringSignedArea, ringContains, ringCentroid,
+  ringBoundingCap,
 } from '../js/sphere.js';
 import { PolygonLayer } from '../js/polygons.js';
 
@@ -139,4 +140,25 @@ test('PolygonLayer.setRotations drives a layer with no rotation table', () => {
   layer.setRotations({ 8: [0, 0, 0, 1] });
   assert.ok(close(vec3ToLonLat([layer.xyz[0], layer.xyz[1], layer.xyz[2]])[0], 100, 1e-9));
   assert.ok(close(vec3ToLonLat([layer.xyz[9], layer.xyz[10], layer.xyz[11]])[0], -50, 1e-9));
+});
+
+test('ringBoundingCap never rejects a point the ring contains', () => {
+  for (const r of [
+    ring([[170, -10], [-170, -10], [-170, 10], [170, 10]]),
+    ring([0, 60, 120, 180, 240, 300].map((l) => [l, 70])),
+    ring([[10, -10], [30, -10], [30, 10], [10, 10]]),
+  ]) {
+    const { centre, cosRadius } = ringBoundingCap(r.buf, 0, r.count);
+    let inside = 0;
+    for (let lat = -89; lat <= 89; lat += 2) {
+      for (let lon = -180; lon < 180; lon += 2) {
+        const p = lonLatToVec3(lon, lat);
+        if (!ringContains(r.buf, 0, r.count, p)) continue;
+        inside++;
+        assert.ok(p[0] * centre[0] + p[1] * centre[1] + p[2] * centre[2] >= cosRadius,
+          `cap rejected ${lon},${lat}, which the ring contains`);
+      }
+    }
+    assert.ok(inside > 0);
+  }
 });

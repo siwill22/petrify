@@ -35,7 +35,7 @@ export {
 export {
   DEG, lonLatToVec3, vec3ToLonLat, tangentFrame,
   cross, normalise, tangentTowards, travel, leftOfTravel,
-  ringSignedArea, ringContains, ringCentroid,
+  ringSignedArea, ringContains, ringCentroid, ringBoundingCap,
 } from './sphere.js';
 // camera.js's own `robinsonForward` is deliberately NOT re-exported: it takes a third
 // `centreLonDeg` argument that ./robinson.js's same-named two-argument function does not,
