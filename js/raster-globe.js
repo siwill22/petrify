@@ -49,6 +49,7 @@ import {
   ROBINSON_YSCALE,
 } from './camera.js';
 import { tracePolyline } from './polyline.js';
+import { Robinson } from './robinson.js';
 
 const VERT_SRC = `
 attribute vec2 aPos;
@@ -531,9 +532,34 @@ export class RasterGlobe {
         get cx() { return globe.cx; },
         get cy() { return globe.cy; },
         get radius() { return globe.radius; },
+        // Robinson has an EDGE where orthographic has a horizon. Layers look for
+        // these two optional members to cut a line or ring at the seam instead of
+        // drawing it back across the whole map; reporting them only in Robinson
+        // mode is what keeps the orthographic path unchanged. A ./robinson.js
+        // projector kept in step with this globe answers both, so the seam
+        // arithmetic lives in one place.
+        get seamSplit() {
+          if (globe.projection !== 'robinson') return undefined;
+          const r = globe._seamRobinson();
+          return (a, b) => r.seamSplit(a, b);
+        },
+        get mapHalfWidth() {
+          if (globe.projection !== 'robinson') return undefined;
+          return globe._seamRobinson().mapHalfWidth;
+        },
       };
     }
     return this._projector;
+  }
+
+  /** A ./robinson.js projector matching this globe's current Robinson view. */
+  _seamRobinson() {
+    const r = this._robinson || (this._robinson = new Robinson());
+    r.cx = this.cx;
+    r.cy = this.cy;
+    r.radius = this._robinsonR;
+    r.lon = this.state.lon ?? 0;
+    return r;
   }
 
   projectVec3(v) {

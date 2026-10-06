@@ -107,6 +107,8 @@ def _as_rule(value):
         args = [render_value(value["window"])]
         if abs(value.get("fade", 0.07) - 0.07) > 1e-9:
             args.append("fade={}".format(render_value(value["fade"])))
+        if abs(value.get("activeScale", 1.5) - 1.5) > 1e-9:
+            args.append("active_scale={}".format(render_value(value["activeScale"])))
         return Rule("geode.age_window({})".format(", ".join(args)))
     return value
 

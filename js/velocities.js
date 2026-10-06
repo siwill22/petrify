@@ -119,6 +119,10 @@ export class VelocityField {
     ends.length = 0;
 
     const base = this._base, dir = this._dir, tip = this._tip;
+    // A projection with an edge (Robinson) wraps an arrow that straddles the seam to
+    // both sides of the map. Arrows are far shorter than half the map, so a projected
+    // length that long can only be that, and the arrow is dropped.
+    const halfWidth = projector.mapHalfWidth;
 
     for (let i = 0; i < this.count; i++) {
       const e = ve[i];
@@ -142,6 +146,7 @@ export class VelocityField {
       travel(base, dir, speed * scale * DEG, tip);
       const b = projector.project(tip);
       if (!b) continue;                     // arrow would run off the visible side
+      if (halfWidth && Math.abs(b[0] - a[0]) > halfWidth) continue;
 
       ends.push(a[0], a[1], b[0], b[1]);
     }

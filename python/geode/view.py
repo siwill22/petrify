@@ -50,15 +50,18 @@ def constant():
     return {"type": "constant"}
 
 
-def age_window(window, fade=0.07):
+def age_window(window, fade=0.07, active_scale=1.5):
     """Bright within `window` Myr of a point's own age, faint outside it.
 
     A function of (point, current time), re-evaluated on every scrub -- which is
     exactly why it cannot be a Python callback and has to be a rule the browser
     understands. `fade` is the alpha of the faint variant: the same hue, not a
     separately chosen colour, so the two read as one category in two states.
+    `active_scale` is how much larger an active (bright) symbol is drawn than a
+    faint one.
     """
-    return {"type": "age_window", "window": float(window), "fade": float(fade)}
+    return {"type": "age_window", "window": float(window), "fade": float(fade),
+            "activeScale": float(active_scale)}
 
 
 # ---- column names ----------------------------------------------------------
@@ -130,13 +133,18 @@ class View:
 
     def __init__(self, reconstruction="Merdith2021", times=(0, 250, 1),
                  projection="orthographic", centre=(0, 0), zoom=1.0,
-                 start_time=None, title=None, subtitle=None, ocean=True):
+                 start_time=None, title=None, subtitle=None, ocean=True,
+                 projections=None):
         start, end, step = times
         self.reconstruction = reconstruction
         self.start = int(start)
         self.end = int(end)
         self.step = int(step)
         self.projection = projection
+        self.projections = list(projections) if projections else None
+        if self.projections and projection not in self.projections:
+            raise ValueError("projection {!r} is not one of projections {!r}".format(
+                projection, self.projections))
         self.centre = tuple(centre)
         self.zoom = float(zoom)
         # Neither endpoint is a good opening view: near the present the globe is a
@@ -166,6 +174,7 @@ class View:
                      projection=_unless(projection, "orthographic"),
                      centre=_unless(self.centre, (0, 0)),
                      zoom=_unless(self.zoom, 1.0),
+                     projections=tuple(self.projections) if self.projections else None,
                      start_time=self.start_time, title=title, subtitle=subtitle,
                      receiver=None)
 

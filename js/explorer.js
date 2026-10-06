@@ -129,16 +129,17 @@ function makeStyleFn(spec, inks, getTime) {
 
     case 'age_window': {
       const w = rule.window ?? 5;
+      const activeScale = rule.activeScale ?? 1.5;
       return (point, cat, base) => {
         const ink = inks.for(point.type);
         const dist = point.age == null ? Infinity : Math.abs(getTime() - point.age);
         const active = dist <= w;
-        // Active points carry the reader's attention -- 50% larger, and the only
+        // Active points carry the reader's attention -- larger (50% by default), and the only
         // ones eligible for hover/spiderfy (see points.js's pick/_nearestDrawn/
         // _membersNear). `active` rides along in the cached style object because
         // restyle() already merges any extra key a style hook returns.
         return { fill: active ? ink.bright : ink.faint,
-                 size: active ? base.size * 1.5 : base.size,
+                 size: active ? base.size * activeScale : base.size,
                  active };
       };
     }
@@ -217,13 +218,17 @@ function buildShell(root, recipe) {
 }
 
 /** A panel's collapse control. Both panels sit over the globe, so both need to be
- *  gettable out of the way entirely rather than only resizable by the window. */
-function panelSection(panel, titleText) {
+ *  gettable out of the way rather than only resizable by the window. What collapsing
+ *  hides is the stylesheet's call: the legend folds away entirely, the time bar
+ *  keeps its controls and drops only the chart. `collapseLabel` names that for a
+ *  screen reader. */
+function panelSection(panel, titleText, { collapseLabel = `Collapse ${titleText}`,
+                                          expandLabel = `Expand ${titleText}` } = {}) {
   const head = el('div', 'dtm-panel-head');
   head.append(el('h2', null, escapeHtml(titleText)));
   const toggle = el('button', 'dtm-panel-toggle', '−');
   toggle.setAttribute('aria-expanded', 'true');
-  toggle.setAttribute('aria-label', `Collapse ${titleText}`);
+  toggle.setAttribute('aria-label', collapseLabel);
   head.append(toggle);
   const body = el('div', 'dtm-panel-body');
   panel.append(head, body);
@@ -232,6 +237,7 @@ function panelSection(panel, titleText) {
     const collapsed = panel.classList.toggle('is-collapsed');
     toggle.setAttribute('aria-expanded', String(!collapsed));
     toggle.textContent = collapsed ? '+' : '−';
+    toggle.setAttribute('aria-label', collapsed ? expandLabel : collapseLabel);
   });
   return body;
 }
@@ -317,7 +323,7 @@ export async function mountExplorer(recipe, root) {
       globe.addOverlay((ctx, g) => {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(g.cx, g.cy, g.radius, 0, Math.PI * 2);
+        traceWorldOutline(ctx, g);
         ctx.fillStyle = fill;
         ctx.fill();
         if (edge) {
@@ -440,7 +446,10 @@ export async function mountExplorer(recipe, root) {
 
   /* ---- time bar ------------------------------------------------------------ */
 
-  const timeBody = panelSection(dom.timebar, 'Time');
+  // Collapsing the time bar hides the chart only: the slider is how the page is
+  // driven, so it stays reachable however small the reader makes the panel.
+  const timeBody = panelSection(dom.timebar, 'Time',
+    { collapseLabel: 'Hide the chart', expandLabel: 'Show the chart' });
 
   const chartEl = el('div', 'dtm-chart');
   const controls = el('div', 'dtm-controls');
@@ -458,6 +467,11 @@ export async function mountExplorer(recipe, root) {
   const sliderToTime = (v) => maxTime - (Number(v) - minTime);
 
   controls.append(play, scrub, timecodeEl);
+  const projectionButton = buildProjectionToggle(recipe.projections, globe, () => {
+    hideTransientUi();
+    scheduleRender();
+  });
+  if (projectionButton) controls.append(projectionButton);
   timeBody.append(chartEl, controls);
 
   scrub.addEventListener('input', () => {
@@ -467,15 +481,22 @@ export async function mountExplorer(recipe, root) {
 
   /* ---- hover --------------------------------------------------------------- */
 
+  // A pinned or hovered popup is anchored to where a point WAS on screen; after a
+  // projection switch that is somewhere else entirely, so it goes.
+  const hovers = [];
+  function hideTransientUi() {
+    for (const h of hovers) h.clear();
+  }
+
   for (const spec of pointSpecs) {
     if (!spec.hover) continue;
-    attachHover({
+    hovers.push(attachHover({
       element: dom.stage,
       popup: dom.popup,
       layer: layers[spec.id ?? 'points'],
       render,
       format: makeFormatter(spec.hover),
-    });
+    }));
   }
 
   /* ---- charts -------------------------------------------------------------- */
@@ -1010,6 +1031,76 @@ function buildProvenance(prov, root) {
   return btn;
 }
 
+/* ---- projection ---------------------------------------------------------- */
+
+/**
+ * The body of the map: a disc for a globe, an oval for Robinson. Robinson's outline
+ * is its two edge meridians, traced through the globe's own forward projection so
+ * the fill and every layer drawn over it agree to the pixel. A hair inside +-180,
+ * since exactly 180 is the seam and could wrap to either side.
+ */
+function traceWorldOutline(ctx, g) {
+  if (g.projection !== 'robinson') {
+    ctx.arc(g.cx, g.cy, g.radius, 0, Math.PI * 2);
+    return;
+  }
+  const edge = 180 - 1e-6;
+  for (let lat = -90; lat <= 90; lat += 2) {
+    const [x, y] = g.projectDelta(edge, lat);
+    if (lat === -90) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  for (let lat = 90; lat >= -90; lat -= 2) {
+    const [x, y] = g.projectDelta(-edge, lat);
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+const PROJECTION_NAMES = { orthographic: 'Globe', robinson: 'Robinson', spilhaus: 'Spilhaus' };
+
+// Small line icons, drawn in currentColor so they follow the theme.
+const PROJECTION_ICONS = {
+  orthographic: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/>'
+    + '<ellipse cx="8" cy="8" rx="2.6" ry="6.2"/><path d="M1.8 8h12.4"/></svg>',
+  robinson: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3.2h10'
+    + 'c1.6 1.4 2.3 3 2.3 4.8s-.7 3.4-2.3 4.8H3C1.4 11.4.7 9.8.7 8S1.4 4.6 3 3.2z"/>'
+    + '<path d="M.8 8h14.4M8 3.2v9.6"/></svg>',
+  spilhaus: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12"'
+    + ' height="12" rx="1.5"/><path d="M2 8h12M8 2v12"/></svg>',
+};
+
+/**
+ * A button beside the time slider that steps through `projections` in order. It is
+ * labelled with the projection a click switches TO, the way a play button shows
+ * play rather than the paused state it is in. Returns null when there is nothing to
+ * switch between.
+ */
+function buildProjectionToggle(projections, globe, onChange) {
+  if (!Array.isArray(projections) || projections.length < 2) return null;
+  const btn = el('button', 'dtm-projection');
+  btn.type = 'button';
+
+  const next = () => {
+    const i = projections.indexOf(globe.projection);
+    return projections[(i + 1) % projections.length];
+  };
+  const label = () => {
+    const target = next();
+    const name = PROJECTION_NAMES[target] ?? target;
+    btn.innerHTML = `${PROJECTION_ICONS[target] ?? ''}<span>${escapeHtml(name)}</span>`;
+    btn.title = `Switch to ${name}`;
+    btn.setAttribute('aria-label', `Switch to ${name} projection`);
+  };
+
+  btn.addEventListener('click', () => {
+    globe.setProjection(next());
+    label();
+    onChange();
+  });
+  label();
+  return btn;
+}
+
 /* ---- pointer ------------------------------------------------------------- */
 
 // A drag across one globe radius turns the Earth by this much. Fixed in screen terms
@@ -1022,6 +1113,14 @@ function attachControls(stageEl, globe, view, zoomLimits, render) {
   let lastX = 0;
   let lastY = 0;
 
+  // Robinson: move the central meridian by a screen distance. 180 degrees of
+  // longitude spans one globe radius at the equator (see RasterGlobe.render()),
+  // so the map tracks the pointer one to one there.
+  function panLongitude(dx) {
+    view.lon += dx * 180 / (globe.radius || 1);
+    view.lon = ((view.lon + 540) % 360) - 180;
+  }
+
   stageEl.addEventListener('pointerdown', (e) => {
     dragging = true;
     lastX = e.clientX;
@@ -1032,9 +1131,15 @@ function attachControls(stageEl, globe, view, zoomLimits, render) {
 
   stageEl.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    const scale = DEGREES_PER_RADIUS / (globe.radius || 1);
-    view.lon -= (e.clientX - lastX) * scale;
-    view.lat += (e.clientY - lastY) * scale;
+    if (globe.projection === 'robinson') {
+      // A flat map pans rather than turns: the central meridian follows the pointer
+      // exactly, and latitude stays put (Robinson has no tilt to change).
+      panLongitude(-(e.clientX - lastX));
+    } else {
+      const scale = DEGREES_PER_RADIUS / (globe.radius || 1);
+      view.lon -= (e.clientX - lastX) * scale;
+      view.lat += (e.clientY - lastY) * scale;
+    }
 
     // Clamping short of the pole avoids the degenerate view matrix exactly at 90,
     // where east and north are undefined.
@@ -1058,6 +1163,13 @@ function attachControls(stageEl, globe, view, zoomLimits, render) {
 
   stageEl.addEventListener('wheel', (e) => {
     e.preventDefault();
+    // Sideways scrolling (a trackpad swipe, shift+wheel) pans a flat map round the
+    // world; anything mostly vertical still zooms.
+    if (globe.projection === 'robinson' && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      panLongitude(e.deltaX);
+      render();
+      return;
+    }
     const factor = Math.exp(-e.deltaY * 0.0015);
     view.zoom = Math.max(zoomLimits[0], Math.min(zoomLimits[1], view.zoom * factor));
     render();

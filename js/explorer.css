@@ -183,6 +183,10 @@
 
 .dtm-panel.is-collapsed .dtm-panel-body { display: none; }
 
+/* The time bar collapses to its controls, never past them. */
+.dtm-timebar.is-collapsed .dtm-panel-body { display: block; }
+.dtm-timebar.is-collapsed .dtm-chart { display: none; }
+
 /* ---- legend -------------------------------------------------------------- */
 
 .dtm-legend-list {
@@ -463,6 +467,45 @@
 
 .dtm-play:hover { border-color: var(--dtm-ink-dim); }
 
+/* The projection switch sits at the end of the time controls: a pill with a small
+   line icon and the name of the projection it switches TO. */
+.dtm-projection {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2rem;
+  padding: 0 0.75rem 0 0.6rem;
+  border: 1px solid var(--dtm-rule);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dtm-cool) 12%, transparent);
+  color: var(--dtm-ink);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 120ms, background-color 120ms;
+}
+
+.dtm-projection:hover {
+  border-color: var(--dtm-cool);
+  background: color-mix(in srgb, var(--dtm-cool) 22%, transparent);
+}
+
+.dtm-projection:focus-visible {
+  outline: 2px solid var(--dtm-cool);
+  outline-offset: 2px;
+}
+
+.dtm-projection svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
 .dtm-timecode {
   flex: none;
   min-width: 5rem;
@@ -699,4 +742,8 @@
   .dtm-header { max-width: none; padding: 1rem 1.1rem; }
   .dtm-header h1 { font-size: 1.15rem; }
   .dtm-subtitle { display: none; }
+
+  /* Icon only: the slider needs the width more than the word does. */
+  .dtm-projection { padding: 0 0.55rem; }
+  .dtm-projection span { display: none; }
 }

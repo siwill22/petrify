@@ -4,6 +4,39 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## v0.17.0
+
+A projection switch for Explorer pages, and two fixes that make Robinson usable under
+the Explorer's own layers (first consumer: Geode-IgneousZircons). Two changes in
+behaviour for existing pages, both listed last.
+
+- **`projections` in the Explorer recipe** (`geode.globe(projections=(...))`) puts a
+  button at the end of the time controls that steps through the listed projections.
+  It is labelled with the projection a click switches to. `projection` is still where
+  the page opens and must be in the list. Without `projections` there is no button.
+- **Robinson panning:** a sideways drag or sideways scroll (trackpad swipe,
+  shift+wheel) moves the central meridian, one to one with the pointer at the
+  equator. Vertical scroll still zooms. Vertical drag does nothing: Robinson has no
+  tilt.
+- **`RasterGlobe.projector` reports `seamSplit` and `mapHalfWidth` in Robinson mode**,
+  answered by a `Robinson` projector kept in step with the globe. Without them,
+  boundaries and continents straddling the map edge were drawn back across the whole
+  map, since layers only cut at the seam when the projector says there is one.
+  Orthographic is unchanged: both report `undefined` there.
+- **The `ocean` layer fills Robinson's oval outline** rather than a disc.
+- **`VelocityField` drops an arrow whose projected length exceeds half the map
+  width**, which on a projection with an edge can only mean it straddles the seam.
+- **`age_window` takes `activeScale`** (`geode.age_window(5, active_scale=1.8)`), the
+  size of a bright point relative to the layer's `size`. The default stays 1.5.
+- `sphere.js`: **`ringBoundingCap`**, a cheap bounding-cap rejection before
+  `ringContains`.
+- **Behaviour change: collapsing the time bar now hides only the chart.** The play
+  button, slider and projection button stay. The slider is how the page is driven,
+  and a collapsed panel used to take it away entirely. The legend still collapses
+  completely.
+- **Behaviour change: in Robinson, a drag no longer changes `lat`**, which Robinson
+  ignored anyway, so switching back to the globe returns to the latitude it left.
+
 ## v0.16.0
 
 Additions for a host that lets people drag plates around by hand (first consumer:

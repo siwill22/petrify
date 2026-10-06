@@ -472,6 +472,7 @@ decisions in a provenance drawer.
   "title": "Igneous zircons through deep time",
   "subtitle": "…",
   "projection": "orthographic",
+  "projections": ["orthographic", "robinson"],
   "theme": "abyssal",
   "camera": { "lon": -60, "lat": 10, "zoom": 1.0, "zoomLimits": [0.6, 4.0] },
   "time": { "start": 0, "end": 1000, "step": 1, "initial": 300, "playRate": 25 },
@@ -490,6 +491,11 @@ decisions in a provenance drawer.
   where a fast plate meets a trench the arrow is what you want to read against the
   triangles; points over both because they are the only interactive layer, and a
   symbol you cannot see you cannot click.
+- `projections`, optional, puts a button at the end of the time controls that steps
+  through the listed projections in order, labelled with the one a click switches
+  to. `projection` is where the page opens and must be in the list. In Robinson a
+  sideways drag or sideways scroll pans the central meridian; vertical scroll still
+  zooms. Omitted, there is no button.
 - `time.start`/`end` are advisory. The host prefers the boundary series' own
   `timeRange`, so a recipe claiming 0–1000 Ma against frames that stop at 410 scrubs
   to 410 rather than into empty space.
@@ -498,7 +504,7 @@ decisions in a provenance drawer.
 
 | `kind` | reads | notes |
 |---|---|---|
-| `ocean` | — | a filled disc at the globe's limb. For pages with no paleogeography raster: without it the globe has no body and the vectors float on the page background |
+| `ocean` | — | a filled disc at the globe's limb (the map's oval outline in Robinson). For pages with no paleogeography raster: without it the globe has no body and the vectors float on the page background |
 | `continents` | `continents.json` | `PolygonLayer`; `fillAlpha`, `strokeAlpha`, `lineWidth` |
 | `boundaries` | `boundaries.json` | `BoundarySeries`; style and decoration come from the Theme |
 | `velocities` | `velocities.json` | `VelocityField`; `scaleBar` adds a round-speed reference |
@@ -537,8 +543,9 @@ Theme changes. A hex literal in the recipe would silently stop matching.
 **Display Rules.** Exactly two ship, each justified by a page that exists:
 
 - `{"type": "constant"}` — colour depends only on the group.
-- `{"type": "age_window", "window": n, "fade": a}` — bright within `n` Myr of the
-  point's own age, faint outside. A function of (point, *current time*),
+- `{"type": "age_window", "window": n, "fade": a, "activeScale": s}` — bright within
+  `n` Myr of the point's own age, faint outside. Bright points are also drawn `s`
+  times the layer's `size` (default 1.5). A function of (point, *current time*),
   re-evaluated on every scrub, which is precisely why it is a rule the browser
   understands rather than a callback the generator could have run.
 

@@ -50,7 +50,7 @@ __all__ = [
 
 def globe(reconstruction="Merdith2021", times=(0, 250, 1),
           projection="orthographic", centre=(0, 0), zoom=1.0, start_time=None,
-          title=None, subtitle=None, ocean=True):
+          title=None, subtitle=None, ocean=True, projections=None):
     """Start a view.
 
     `times` is `(start, end, step)` in Ma -- deep time at the larger number, the
@@ -61,12 +61,16 @@ def globe(reconstruction="Merdith2021", times=(0, 250, 1),
     `projection` is 'orthographic' (a rotatable globe), 'robinson' (a flat world map
     with a pannable central meridian) or 'spilhaus' (a fixed Southern Ocean view).
 
+    `projections` lists the projections a reader can switch between with a button
+    beside the time slider, e.g. ("orthographic", "robinson"). Left as None there is
+    no button and the page stays in `projection`.
+
     `centre` is (lon, lat) for the opening view; `start_time` is the age it opens at,
     defaulting to about a third of the way into the range.
     """
     return View(reconstruction=reconstruction, times=times, projection=projection,
                 centre=centre, zoom=zoom, start_time=start_time, title=title,
-                subtitle=subtitle, ocean=ocean)
+                subtitle=subtitle, ocean=ocean, projections=projections)
 
 
 def themes(lightness=None, temperature=None):

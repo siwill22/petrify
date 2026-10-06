@@ -212,6 +212,8 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
         "caption": view.caption_text,
         "layers": layers,
     }
+    if view.projections:
+        recipe["projections"] = view.projections
     if sources:
         recipe["charts"] = {"mode": getattr(view, "chart_mode", "shade"),
                             "sources": sources}
