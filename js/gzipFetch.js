@@ -12,17 +12,31 @@
  * is what lets a dev server and a static host disagree about this without callers
  * needing to know which one they're talking to.
  */
-export async function fetchMaybeGzippedJSON(url) {
+/** Shared by fetchMaybeGzippedJSON/fetchMaybeGzippedBinary -- fetches `url` and returns
+ *  its DECOMPRESSED bytes as an ArrayBuffer, transparently un-gzipping a `.gz` file the
+ *  same gzip-magic-number-sniffing way (see the module comment above). */
+async function fetchMaybeGzippedBytes(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const raw = new Uint8Array(await res.arrayBuffer());
 
   const gzipped = raw.length > 2 && raw[0] === 0x1f && raw[1] === 0x8b;
-  if (!url.endsWith('.gz') || !gzipped) {
-    return JSON.parse(new TextDecoder().decode(raw));
-  }
+  if (!url.endsWith('.gz') || !gzipped) return raw.buffer;
 
   const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'));
-  const text = await new Response(stream).text();
-  return JSON.parse(text);
+  return new Response(stream).arrayBuffer();
+}
+
+export async function fetchMaybeGzippedJSON(url) {
+  const buf = await fetchMaybeGzippedBytes(url);
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+/** Same transparent-gunzip fetch as fetchMaybeGzippedJSON, but for a payload that is
+ *  NOT JSON -- a packed binary blob (see aggregate.py's _pack_frames_binary() and
+ *  SCHEMA.md's density.json section) too large to spend a JSON.parse() pass on. Returns
+ *  the raw decompressed ArrayBuffer; the caller constructs typed-array VIEWS over it
+ *  directly, at whatever offsets its own header describes. */
+export async function fetchMaybeGzippedBinary(url) {
+  return fetchMaybeGzippedBytes(url);
 }

@@ -219,6 +219,7 @@ overlap into a density cloud in which no category is legible, so this ships coun
             "cells": 3200, "cell_area_sr": 0.0039269908 },
   "times": [0, 5, 10],
   "cell_centres": [[-177.75, -77.1614], ...one per cell, indexed by cell id...],
+  "cell_bounds": null,
   "default_grouping": "subclass",
   "groupings": {
     "subclass": {
@@ -244,32 +245,54 @@ overlap into a density cloud in which no category is legible, so this ships coun
 - `richness` is the count of **distinct** `richness_field` values in the cell, which is a
   different question from the total and usually the one worth plotting.
 
-### The renderer does not implement the grid
+### The renderer does not implement the grid — except where the grid ships its own boundary
 
 `cell_centres` ships lon/lat per cell so `AggregateLayer` never needs to know the
 tessellation. That is the same "one implementation, not two" rule the rest of this file is
 about: a grid written once in Python and once in JavaScript would drift, and the drift
-would be invisible — glyphs in almost the right places. Swapping the grid (HEALPix, say)
-is therefore an exporter change with **no** renderer change.
+would be invisible — glyphs in almost the right places. Swapping the grid is therefore an
+exporter change with **no** renderer change — confirmed by `HealpixGrid` (below) landing
+with zero edits to `js/aggregate.js`'s discrete-mode (`'pie'`/`'dominant'`) code.
 
-The cost is that a consumer can draw marks *at* cell centres but cannot draw cell
-**boundaries**, because it does not know where they are. Deliberate.
+The original cost, stated in the first version of this file: a consumer can draw marks *at*
+cell centres but not cell **boundaries**, because it does not know where they are. That held
+until `'density'` mode (`density.json`, below) needed to draw actual HEALPix *pixels* rather
+than approximate them with overlapping discs — see `cell_bounds`, an **optional** field
+(`null` unless the grid implements `.bounds()`; only `HealpixGrid` does today) carrying each
+cell's four corner vertices, computed exactly by `astropy_healpix`'s `hp.boundaries()`, not
+approximated. This still is not the renderer implementing the grid: `js/aggregate.js` draws
+whatever quad it is handed and has no HEALPix-specific code — the tessellation math stays in
+`HealpixGrid.bounds()`, the one place it has ever lived.
 
-### Equal area, exactly, and what it costs
+### Two grids, on purpose — `grid.kind`
 
-`EqualAreaGrid` divides the sphere into `rings` bands of equal area (equal steps in
+`"equal-area-rings"` (`EqualAreaGrid`) and `"healpix-ring"` (`HealpixGrid`) both ship, and
+neither replaces the other: a dataset can be exported under either (or both, for the same
+data/time) so the two can be compared on screen rather than one being chosen for it in
+advance. `grid` carries `kind` plus that grid's own construction params —
+`{rings, lon_cells}` for `EqualAreaGrid`, `{nside, order}` for `HealpixGrid` — read
+generically via each grid class's `describe()`, never hardcoded to one grid's field names.
+
+**`EqualAreaGrid`** divides the sphere into `rings` bands of equal area (equal steps in
 sin φ), each cut into `lon_cells` equal divisions. Every cell has area exactly
 `4π / (rings × lon_cells)` steradians — by construction, not approximately.
 `verify_equal_area()` confirms it by Monte Carlo: uniform points land in each cell in
-proportion to its area, so the occupancy histogram is flat to within `√n` counting noise.
+proportion to its area, so the occupancy histogram is flat to within `√n` counting noise
+(the same check `HealpixGrid` passes, since true HEALPix cells are exactly equal-area too).
 
-A lon/lat degree grid would have been wrong, not merely coarser: its cells shrink as
-cos φ, so counting into one inflates apparent density toward the poles — fatal for
-anything read as a latitudinal gradient.
+A lon/lat degree grid would have been wrong for either, not merely coarser: its cells
+shrink as cos φ, so counting into one inflates apparent density toward the poles — fatal
+for anything read as a latitudinal gradient.
 
-What was traded for that: cells near the poles are elongated north–south (a 40-ring
-grid's top ring spans ~13° of latitude against 4.5° of longitude). A HEALPix grid would
-fix the aspect ratio, and needs no change outside `aggregate.py`.
+What `EqualAreaGrid` trades for its simplicity: cells near the poles are elongated
+north–south (a 40-ring grid's top ring spans ~13° of latitude against 4.5° of longitude).
+
+**`HealpixGrid`** (`nside`, a power of two; `12 × nside²` cells) is also exactly equal-area,
+*and* near-equal in shape — no polar elongation — via `astropy_healpix`'s healpy-compatible
+`ang2pix`/`pix2ang`/`nside2pixarea`. Already reachable in `pygmt17` through `gprm`, so this
+added no new conda dependency; `scipy` and `astropy-healpix` are now ordinary
+`pyproject.toml` dependencies (unlike `pygplates`/`gprm`, which are not on PyPI and stay
+out of it — see the README).
 
 ### Frames are not interpolated
 
@@ -287,6 +310,121 @@ applies the same rotation, rather than making an independent `pygplates.reconstr
 It also duplicates `PointLayer.isLive()`'s rule exactly (`live_mask`), including the
 `plate_begin_age` check. If either diverged, a pie would summarise points the map does not
 draw, and nothing on screen would reveal it.
+
+## `density.json` — continuous spherical density, not counts
+
+What `aggregates.json` cannot answer either: "how concentrated is the underlying process
+here," rather than "how many things landed in this cell." `build_density()` evaluates a
+von Mises-Fisher kernel density estimate (the sphere's analogue of a Gaussian — a flat
+KDE bandwidth would be wrong on a sphere) at a grid's own cell centres.
+
+```json
+{
+  "model": "Scotese",
+  "grid": { "kind": "healpix-ring", "nside": 64, "order": "ring",
+            "cells": 49152, "cell_area_sr": 0.0002557 },
+  "times": [0, 5, 10],
+  "cell_centres": [[-177.75, -77.1614], ...one per cell, indexed by cell id...],
+  "cell_bounds": [[[-178.02, -77.34], [-177.48, -77.34], [-177.44, -76.99], [-178.06, -76.99]], ...],
+  "default_grouping": "rock_group",
+  "groupings": {
+    "rock_group": {
+      "label": "Rock group",
+      "category_order": ["igneous", "sedimentary", "metamorphic"],
+      "categories": { "igneous": { "label": "Igneous", "fill": "rgb(214,96,77)" } },
+      "density_ref": 812.4,
+      "frames": { "0": { "cells": [1204, 1287], "density": [340.1, 22.6] } }
+    }
+  },
+  "lifespan": "range",
+  "bandwidth_deg": 2.0,
+  "density_units": "points per steradian",
+  "meta": { "source": "...", "caption": "..." }
+}
+```
+
+**Two OPT-IN compact forms, both `None` by default (the shape above, unchanged)** —
+added 2026-09-24 after a fine `HealpixGrid` (nside=512, the resolution a 0.5° bandwidth
+needs) made the self-contained shape 437MB of JSON text for one dataset/bandwidth, and
+extending one dataset's time range 3x (109 → 361 frames) made it 494MB again after the
+first fix alone:
+
+- **`grid.geometry_ref`** (`build_density(..., geometry_ref="../../_grid/healpix-ring_n512.json.gz")`):
+  `cell_centres`/`cell_bounds` are omitted from THIS payload entirely; the SAME two
+  arrays live in a separate file at that path (produced by the new `grid_geometry(grid)`
+  function, a `{kind, ...describe(), cells, cell_centres, cell_bounds}` dict — the same
+  shape this file's `grid`+`cell_centres`+`cell_bounds` keys always had, just written
+  once and referenced by every dataset/bandwidth that shares a resolution instead of each
+  embedding its own copy). Measured: this alone was ~304MB of a 437MB nside=512 payload,
+  byte-identical across every dataset at that nside. `js/aggregate.js`'s
+  `AggregateLayer.load()` resolves the path (plain string/segment join against its own
+  `url`, not `new URL()` — works for both absolute and relative fetch URLs) and caches
+  the fetched result in a module-level `Map`, so switching dataset/bandwidth at the same
+  resolution within one session fetches it once, not per switch.
+- **`groupings[name].frames_ref`** (`build_density(..., frames_ref="density_bw0.5.bin.gz")`):
+  that grouping's `frames` (a JSON dict of per-time `{cells, density}` JSON arrays) is
+  REMOVED from the JSON payload; the same per-frame data lives instead in a companion
+  binary file at that path, packed by `_pack_frames_binary()`:
+
+  ```
+  magic   'DNSF' (4 bytes)
+  version uint32 = 1
+  n_frames uint32
+  per frame, in the SAME order `times` lists them:
+    cell_count uint32
+    cells      uint32 * cell_count   (index into cell_centres/cell_bounds)
+    density    float32 * cell_count
+  ```
+
+  `js/aggregate.js` fetches this (gzip-transparent, same convention as every other
+  binary export here) and constructs `Uint32Array`/`Float32Array` VIEWS directly over the
+  decompressed bytes — no JSON number parsing (the dominant cost at this scale: parsing
+  hundreds of MB of decimal-text floats blocks the main thread for seconds and the
+  resulting boxed-number JS arrays cost several times the raw bytes in memory) and no
+  Python-side `round()` loop building it either. A single `frames_ref` name is shared by
+  every grouping in the payload, which is fine while every density dataset declares
+  exactly one (true of both cataloged datasets); a future multi-grouping one would need a
+  distinct name per grouping.
+
+  Both are independent: a payload can use `geometry_ref` alone, `frames_ref` alone, or
+  both (every dataset cataloged as of 2026-09-24 uses both).
+
+Same shape as `aggregates.json` on purpose — `AggregateLayer.load()` needed no new
+parsing, only a new draw mode (`js/aggregate.js`'s `'density'` mode) that reads `density`
+where `'pie'`/`'dominant'` read `counts`/`richness`. `category_order`/`categories` still
+declare what a Grouping's *subset* is (e.g. which rock types are pooled into this KDE),
+not a per-cell split — a frame here is one continuous field, not composition.
+
+- **`grid` supplies evaluation points, not bins.** Unlike `aggregates.json`'s `'pie'`/
+  `'dominant'` modes, no `cell_of` lookup happens at draw time; `grid.centres()` is just
+  where the KDE is sampled. Any grid works, but a `HealpixGrid` is the reason to prefer it
+  here over `EqualAreaGrid` twice over: even point spacing, AND (see `cell_bounds` above)
+  exact cell boundaries a `'density'`-mode renderer can fill as true pixels instead of
+  approximating with overlapping discs.
+- **`density_ref` is the max over the WHOLE series**, not the current frame's own max. An
+  animated colour ramp normalised per frame would imply every time step had the same peak
+  abundance regardless of how it actually changed — the density equivalent of
+  `aggregates.json`'s frames-are-not-interpolated discipline, in the other direction.
+- **Units are "points per steradian."** Each input record's kernel integrates to exactly 1
+  over the whole sphere, so density sums to (approximately) the live record count when
+  integrated over cell area — a mass-conservation property `test_aggregate.py` checks
+  directly, and a useful sanity check on any new `bandwidth_deg`.
+- **`bandwidth_deg`** is the kernel's angular standard deviation, a prep-time constant —
+  not a runtime slider. Re-evaluating a KDE per frame in the browser is not on the table,
+  and a bandwidth chosen per view would make the same dataset tell two different stories
+  depending on who is looking. Default 2.0° (~222 km, FWHM ~520 km) resolves clustering at
+  roughly 500 km scale — narrower than that and the evaluation grid itself becomes the
+  limit, which is why the default `HealpixGrid` for this export is `nside=64` (~100 km cell
+  spacing, well under one bandwidth) rather than `aggregates_healpix.json`'s coarser
+  `nside=16` (~410 km, chosen for legible discrete glyphs, not KDE resolution — the two
+  files are free to use different `nside` for exactly this reason).
+- **This is sampled density, not abundance.** Two datasets with identical KDE shape can
+  differ in how completely they were collected. Ship `aggregates.json`'s discrete counts
+  alongside every `density.json` as the honest companion — this file does not correct for
+  sampling effort, and should not be read as though it does (Geode's ADR-0035 discipline).
+- **A cell missing from a frame has negligible density**, not necessarily zero: frames
+  drop cells below `eps × density_ref` (a `build_density()` parameter, not carried in the
+  payload) rather than shipping a long near-zero tail.
 
 ## `latitude.json` — latitude against age
 

@@ -200,6 +200,99 @@ def test_trajectory_transport_reconstructs_the_drawn_point_not_the_partition_anc
     assert (lon100, lat100) != (25.0, 5.0)
 
 
+# ---- duplicate positions: partition once per position, broadcast the result --------
+
+class TestDuplicatePositionsPartitionOnce:
+    """`_partition_plate_ids` partitions one representative per DISTINCT (lon, lat) and
+    broadcasts its result to every feature sharing that position, instead of
+    partitioning every feature individually (measured 2026-09-24: partition_into_plates()
+    was the dominant cost of a real 2M-record PBDB run, and real point data clusters
+    heavily at identical coordinates). Must be provably EXACT, not just faster."""
+
+    def test_duplicate_positions_get_identical_plate_assignment(self, model):
+        gdf = df([
+            {"Longitude": 5, "Latitude": 5, "Age": 10},   # inside A
+            {"Longitude": 5, "Latitude": 5, "Age": 20},   # same position, different age
+            {"Longitude": 5, "Latitude": 5, "Age": 30},   # same position again
+        ])
+        records, unassigned = points_from_dataframe(gdf, model)
+        assert unassigned == 0
+        by_index = {int(f.get_name()): (f, r) for f, r in records}
+        for i in range(3):
+            feature, record = by_index[i]
+            assert record["plate_id"] == PLATE_A
+            assert record["plate_begin_age"] == 500.0
+            # 'trajectory' transport reads this off the feature directly, not the
+            # returned metadata -- see _partition_plate_ids' own docstring.
+            assert feature.get_reconstruction_plate_id() == PLATE_A
+
+    def test_partition_into_plates_is_called_once_per_distinct_position(self, model, monkeypatch):
+        """The actual point of the optimisation: assert the CALL, not just the result,
+        so a future change that accidentally re-partitions every duplicate individually
+        fails loudly here instead of only showing up as a slow prep run."""
+        seen_sizes = []
+        real = pygplates.partition_into_plates
+
+        def spy(*args, **kwargs):
+            # partition_into_plates(polygons, rotation_model, features, ...)
+            seen_sizes.append(len(args[2]))
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(pygplates, "partition_into_plates", spy)
+
+        gdf = df([
+            {"Longitude": 5, "Latitude": 5, "Age": 10},    # inside A, position 1
+            {"Longitude": 5, "Latitude": 5, "Age": 20},    # inside A, position 1 (dup)
+            {"Longitude": 25, "Latitude": 5, "Age": 30},   # inside B, position 2
+        ])
+        points_from_dataframe(gdf, model)
+        assert seen_sizes == [2]  # 2 distinct positions, not 3 records
+
+    def test_duplicate_positions_match_a_fully_distinct_baseline(self, model):
+        """Same three positions, once with a duplicate and once all-distinct (a fourth,
+        harmless point standing in for what the duplicate would have gotten on its own)
+        -- the duplicate's own record must be pixel-for-pixel what individual
+        partitioning would have produced."""
+        with_dup = df([
+            {"Longitude": 5, "Latitude": 5, "Age": 10},
+            {"Longitude": 5, "Latitude": 5, "Age": 20},
+        ])
+        all_distinct = df([
+            {"Longitude": 5, "Latitude": 5, "Age": 10},
+        ])
+        dup_records, dup_unassigned = points_from_dataframe(with_dup, model)
+        distinct_records, distinct_unassigned = points_from_dataframe(all_distinct, model)
+
+        assert dup_unassigned == distinct_unassigned == 0
+        _, dup_record_0 = dup_records[0]
+        _, dup_record_1 = dup_records[1]
+        _, distinct_record = distinct_records[0]
+        # Both duplicates match the independently-computed baseline (Age differs by
+        # construction, so compare everything else).
+        for record in (dup_record_0, dup_record_1):
+            assert record["plate_id"] == distinct_record["plate_id"]
+            assert record["plate_begin_age"] == distinct_record["plate_begin_age"]
+
+    def test_trajectory_transport_reconstructs_every_duplicate_correctly(self, model):
+        """The broadcast writes reconstruction_plate_id/valid_time onto each duplicate
+        feature object directly -- confirm 'trajectory' transport, which reads those
+        properties straight off the feature (not off this module's metadata), still
+        reconstructs every duplicate through the right plate."""
+        gdf = df([
+            {"Longitude": 25, "Latitude": 5, "Age": 1},   # inside B, position 1
+            {"Longitude": 25, "Latitude": 5, "Age": 2},   # same position (dup)
+        ])
+        records, _ = points_from_dataframe(gdf, model)
+        payload = build_points(model, records, times=[0, 100], transport="trajectory")
+
+        for i in (0, 1):
+            lon0, lat0 = payload["frames"]["0"][0][i], payload["frames"]["0"][1][i]
+            lon100, lat100 = payload["frames"]["100"][0][i], payload["frames"]["100"][1][i]
+            assert (lon0, lat0) == (25.0, 5.0)
+            # Plate B's 30 degree rotation must have moved BOTH duplicates identically.
+            assert (lon100, lat100) != (25.0, 5.0)
+
+
 def test_rotations_transport_groups_points_by_the_splits_plate_id(model):
     """'rotations' transport ships one rotation series per plate keyed off record
     plate_id -- which, with a split, is the partition field's plate. The payload's

@@ -11,8 +11,12 @@ license = { text = "MIT" }
 
 # pygplates and gprm are not on PyPI -- they come from the conda/GPlates stack, so they
 # are deliberately not listed as installable dependencies. See the README for setup.
+# scipy and astropy-healpix ARE ordinary PyPI/conda-forge packages, so unlike those two
+# they are listed here rather than left to the README.
 dependencies = [
     "numpy",
+    "scipy",
+    "astropy-healpix",
 ]
 
 [project.optional-dependencies]

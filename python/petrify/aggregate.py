@@ -25,9 +25,21 @@ gradient that is not a rounding detail, it is the answer.
 
 The cost, stated plainly: cells near the poles are elongated north-south (the top ring of a
 40-ring grid spans ~13 degrees of latitude but only 4.5 of longitude). Aspect ratio was
-traded for exact equality of area, and for an exporter with no HEALPix dependency
-available. A HEALPix grid would improve the aspect ratio and needs no renderer change --
-only a different implementation of `cell_of`/`centres` here.
+traded for exact equality of area. `HealpixGrid` below fixes the aspect ratio and needs no
+renderer change -- only a different implementation of `cell_of`/`centres` here. Both grids
+ship side by side rather than one replacing the other, so a dataset can be exported under
+either (or compared against `build_density()`'s continuous KDE) without committing in
+advance to which reads best.
+
+---- Density is a different question from counts, and gets its own function -------------
+
+`build_aggregates()` answers "how many things are in this cell" -- a discrete count, tied
+to one grid's cells. `build_density()` answers "how concentrated is the underlying process
+here" -- a continuous spherical KDE (von Mises-Fisher kernel, the sphere's analogue of a
+Gaussian), evaluated at a grid's cell centres but not itself binned into them. It is
+*sampled* density, not true abundance: two datasets with identical KDE shape can differ in
+how completely they were collected, which is exactly what `build_aggregates()`'s raw counts
+are for showing alongside, not what this function corrects for.
 
 ---- Reconstruction agrees with the renderer by construction -------------------------------
 
@@ -43,7 +55,9 @@ import numpy as np
 
 __all__ = [
     "EqualAreaGrid",
+    "HealpixGrid",
     "build_aggregates",
+    "build_density",
     "build_latitude",
     "equal_degree_bands",
     "live_mask",
@@ -99,6 +113,80 @@ class EqualAreaGrid:
         lat = np.degrees(np.arcsin(np.clip(s, -1.0, 1.0)))
         lon = -180.0 + (ix + 0.5) * 360.0 / self.lon_cells
         return [[round(float(a), 4), round(float(b), 4)] for a, b in zip(lon, lat)]
+
+    def describe(self):
+        """This grid's own construction params, for the exported `grid` metadata block."""
+        return {"rings": self.rings, "lon_cells": self.lon_cells}
+
+
+class HealpixGrid:
+    """True HEALPix cells: equal area, like `EqualAreaGrid`, but also near-equal shape,
+    which `EqualAreaGrid` trades away at the poles (see the module docstring).
+
+    Backed by `astropy_healpix`'s healpy-compatible shim
+    (`astropy_healpix.healpy`) -- already a `pygmt17` dependency via `gprm`, so this needs
+    no new package. A hand-rolled ang2pix was deliberately not written: HEALPix's
+    hierarchical indexing is exactly the kind of "looks simple, is not" geometry this
+    codebase defers to a real implementation for rather than re-deriving.
+
+    @param nside  must be a power of two (HEALPix's own constraint). `12 * nside**2`
+                  cells result; `nside=16` -> 3072, close to `EqualAreaGrid`'s common
+                  `rings=40` default (3200).
+    """
+
+    kind = "healpix-ring"
+
+    def __init__(self, nside=16):
+        nside = int(nside)
+        if nside <= 0 or (nside & (nside - 1)) != 0:
+            raise ValueError(f"nside must be a positive power of two, got {nside}")
+        self.nside = nside
+        self.n_cells = 12 * nside * nside
+
+    @property
+    def cell_area_sr(self):
+        from astropy_healpix import healpy as hp
+        return float(hp.nside2pixarea(self.nside))
+
+    def cell_of(self, lon, lat):
+        """Cell index for arrays of lon/lat in degrees. Vectorised."""
+        from astropy_healpix import healpy as hp
+        lon = np.asarray(lon, dtype=float)
+        lat = np.asarray(lat, dtype=float)
+        return hp.ang2pix(self.nside, lon, lat, nest=False, lonlat=True)
+
+    def centres(self):
+        """[[lon, lat], ...] for every cell, indexed as `cell_of` returns. Longitude
+        wrapped to [-180, 180) to match `EqualAreaGrid.centres()`'s convention."""
+        from astropy_healpix import healpy as hp
+        lon, lat = hp.pix2ang(self.nside, np.arange(self.n_cells), nest=False, lonlat=True)
+        lon = ((lon + 180.0) % 360.0) - 180.0
+        return [[round(float(a), 4), round(float(b), 4)] for a, b in zip(lon, lat)]
+
+    def describe(self):
+        return {"nside": self.nside, "order": "ring"}
+
+    def bounds(self):
+        """[[[lon, lat], x4], ...] -- the four corner vertices of every cell, in the
+        SAME 3-D-unit-vector geometry `centres()`'s lon/lat encodes, so a cell
+        straddling the antimeridian needs no special casing here: each corner is
+        wrapped into [-180, 180) independently, same as `centres()`, and the renderer
+        rebuilds a seamless 3-D vector per corner rather than interpolating in lon/lat.
+
+        This is what makes true HEALPix "pixels" possible in the renderer (filled
+        quads, not marks at a centre) -- see `js/aggregate.js`'s `'density'` mode.
+        `hp.boundaries` gives exact cell edges (not an approximation), vectorised
+        across every cell in one call.
+        """
+        from astropy_healpix import healpy as hp
+        b = hp.boundaries(self.nside, np.arange(self.n_cells), step=1, nest=False)
+        # b: (n_cells, 3, 4) -- reshape to (n_cells*4, 3) for one vec2ang call.
+        vecs = b.transpose(0, 2, 1).reshape(-1, 3)
+        lon, lat = hp.vec2ang(vecs, lonlat=True)
+        lon = (((lon + 180.0) % 360.0) - 180.0).reshape(self.n_cells, 4)
+        lat = lat.reshape(self.n_cells, 4)
+        return [[[round(float(lo), 4), round(float(la), 4)] for lo, la in zip(*cell)]
+                for cell in zip(lon, lat)]
 
 
 def verify_equal_area(grid, samples=2_000_000, seed=0):
@@ -297,21 +385,320 @@ def build_aggregates(records, rotations, times, groupings, grid=None,
 
     return {
         "model": model_name or "unknown",
-        "grid": {
-            "kind": grid.kind,
-            "rings": grid.rings,
-            "lon_cells": grid.lon_cells,
-            "cells": grid.n_cells,
-            "cell_area_sr": round(grid.cell_area_sr, 10),
-        },
+        "grid": _grid_meta(grid),
         "times": [float(t) for t in times],
         "cell_centres": grid.centres(),
+        # Only present for a grid that implements it (HealpixGrid) -- optional, same
+        # duck-typed spirit as `describe()`. `null` for EqualAreaGrid: nothing here
+        # currently renders equal-area-ring cells as filled pixels, so there was
+        # nothing to justify writing an equivalent rectangle-corners method for it yet.
+        "cell_bounds": grid.bounds() if hasattr(grid, "bounds") else None,
         "default_grouping": default_grouping or next(iter(groupings)),
         "groupings": out_groupings,
         "lifespan": lifespan,
         "richness_field": richness_field,
         "meta": meta or {},
     }
+
+
+def _grid_meta(grid):
+    """The exported `grid` metadata block -- `kind` and construction params first (so
+    `EqualAreaGrid`'s `rings`/`lon_cells` and `HealpixGrid`'s `nside`/`order` read the same
+    as before this was generalised), `cells`/`cell_area_sr` last since every grid has them.
+    Grid classes are duck-typed against `describe()`/`cell_of()`/`centres()`/`n_cells`/
+    `cell_area_sr` -- nothing here or in `build_aggregates`/`build_density` needs to know
+    which one it was given."""
+    return {
+        "kind": grid.kind,
+        **grid.describe(),
+        "cells": grid.n_cells,
+        "cell_area_sr": round(grid.cell_area_sr, 10),
+    }
+
+
+def grid_geometry(grid):
+    """The (potentially large) coordinate arrays a grid's cells need to render as filled
+    pixels: every cell's centre and quad corners. Split out from `build_density()`'s own
+    payload so a caller can write ONE shared file per (kind, resolution) and point many
+    datasets/bandwidths at it (`build_density(..., geometry_ref=...)`) instead of each
+    duplicating a copy -- measured 2026-09-24: at nside=512, `cell_bounds` alone is ~245MB
+    of JSON text, the majority of a fine HealpixGrid density export's size, and identical
+    for every dataset that happens to share that nside."""
+    return {
+        "kind": grid.kind,
+        **grid.describe(),
+        "cells": grid.n_cells,
+        "cell_centres": grid.centres(),
+        "cell_bounds": grid.bounds() if hasattr(grid, "bounds") else None,
+    }
+
+
+def _insert_name_in_ref(ref, name):
+    """"density_bw0.5.bin.gz" + "realm" -> "density_bw0.5.realm.bin.gz" -- gives a
+    multi-grouping dataset (e.g. panama's origin/basin/realm) a distinct filename per
+    grouping. Splits on the LITERAL ".bin" marker, not the first '.' -- a bandwidth
+    like 0.5 puts a decimal point in the base name itself, so splitting on the first
+    '.' produced "density_bw0.origin.5.bin.gz" (caught by actually running this
+    against panama's real bandwidth-keyed filenames, not a synthetic fixture without a
+    fractional bandwidth in its name)."""
+    idx = ref.rindex(".bin")
+    return f"{ref[:idx]}.{name}{ref[idx:]}"
+
+
+def _pack_frames_binary(packed):
+    """One grouping's per-frame (cells, density) arrays, in TIME order, as a flat binary
+    blob -- `js/aggregate.js`'s `fetchMaybeGzippedBinary()` reads this directly into
+    Uint32Array/Float32Array views, no JSON number parsing (a large fine-grid density
+    payload's dominant cost -- measured 2026-09-24: 227,292-sample igneous rocks at
+    nside=512 over 361 frames costs 494MB as JSON text, mostly this) and no per-element
+    Python `round()` loop building it either.
+
+    Layout (little-endian): magic 'DNSF' (4 bytes), version (uint32=1), n_frames
+    (uint32); then per frame, in the SAME order `times` lists them: cell_count (uint32),
+    cells (uint32 * cell_count), density (float32 * cell_count). See SCHEMA.md.
+    """
+    import struct
+    out = bytearray(b"DNSF")
+    out += struct.pack("<II", 1, len(packed))
+    for cells, density in packed:
+        out += struct.pack("<I", len(cells))
+        out += np.asarray(cells, dtype="<u4").tobytes()
+        out += np.asarray(density, dtype="<f4").tobytes()
+    return bytes(out)
+
+
+def _bin_nside_for_bandwidth(bandwidth_deg, cells_per_bandwidth=32):
+    """Smallest power-of-two HEALPix nside for pre-binning `build_density()`'s source
+    points, well finer than any grid a caller would choose to actually DISPLAY at this
+    bandwidth (that one wants ~4 cells per bandwidth, not ~32 -- see the prep scripts'
+    own `_nside_for_bandwidth()`; this is a private, internal-only resolution knob, not
+    part of the payload).
+
+    HEALPix cell spacing is ~58.6/nside degrees, so this finds the smallest nside whose
+    spacing is at most bandwidth_deg/cells_per_bandwidth. Measured 2026-09-24 against
+    2,002,734 real PBDB occurrences (whole-database fossils, 0-540 Ma) at bw=1.0/0.5:
+    cells_per_bandwidth=32 gave 0.38-0.45% mean relative error on cells above 0.1% of
+    peak density, for a 32-37x reduction in per-frame KDE runtime -- finer bins bought
+    only marginally better accuracy for a real cost (cells_per_bandwidth=16 measured
+    0.79-0.91% error at 42-45x; =4, matching the *display* grid itself, measured
+    3.5-3.8% error, judged too coarse to use as the computation grid even though it's
+    fine for what gets drawn).
+    """
+    nside = 1
+    while 58.6 / nside > bandwidth_deg / cells_per_bandwidth:
+        nside *= 2
+    return nside
+
+
+def build_density(records, rotations, times, grid, groupings, bandwidth_deg=2.0,
+                  lifespan="range", model_name=None, meta=None, default_grouping=None,
+                  eps=1e-3, geometry_ref=None, frames_ref=None):
+    """A continuous spherical KDE, evaluated at `grid`'s cell centres, per grouping per time.
+
+    Same payload shape as `build_aggregates()` (`groupings[name].frames[time]`) so
+    `AggregateLayer` needs no new parsing to load it -- only a new draw mode, since a frame
+    here carries `density` (float, one per listed cell) instead of `counts`/`richness`.
+    `grid` supplies evaluation POINTS only (`.centres()`, plus `.bounds()` where the grid
+    has it, for true-pixel rendering -- see `cell_bounds` below); its `cell_of`/`cell_area_sr`
+    are not used, so passing an `EqualAreaGrid` here works but is pointless -- a `HealpixGrid`
+    gives a more even point spacing for the same reason it does in `build_aggregates()`, AND
+    is the only grid here with cell boundaries to render as actual pixels.
+
+    @param bandwidth_deg  angular standard deviation of the von Mises-Fisher kernel, in
+                          degrees. Default 2.0 (~222 km, FWHM ~520 km) resolves clustering
+                          at roughly 500 km scale or finer -- narrower than that and the grid
+                          itself becomes the limit (see `HealpixGrid`'s own `nside`, which
+                          the caller must choose finely enough to actually resolve a kernel
+                          this narrow: cell spacing should be well under one bandwidth, not
+                          merely under the old default's). A prep-time constant, not a
+                          runtime slider: re-evaluating a KDE per frame in the browser is not
+                          on the table, and a bandwidth chosen per-view would make the same
+                          dataset tell two different stories depending on who is looking.
+    @param eps            a cell is dropped from a frame once its density falls below
+                          `eps` of that grouping's `density_ref` (see below), rather than
+                          shipping a long tail of near-zero values.
+    @param geometry_ref   when given, `cell_centres`/`cell_bounds` are OMITTED from this
+                          payload and `grid.geometry_ref` is set to this string instead --
+                          the caller has already written (or will write) a shared
+                          `grid_geometry()` file at that location for the viewer to fetch
+                          once and reuse across every dataset/bandwidth at this grid's
+                          resolution, rather than each payload embedding its own copy of
+                          the same coordinates. `None` (the default) keeps the old
+                          self-contained shape, unchanged, for callers that have not
+                          adopted the shared-file convention.
+    @param frames_ref     when given, every grouping's `frames` (per-time cells/density,
+                          normally a JSON dict of JSON arrays) is instead packed via
+                          `_pack_frames_binary()`; the caller writes the bytes found at
+                          each grouping's `frames_bin` key (removed from the
+                          JSON-serialisable payload, since raw bytes are not JSON) to
+                          its own `frames_ref` path. A SINGLE grouping's `frames_ref` is
+                          this string unchanged; MULTIPLE groupings (e.g. panama's
+                          origin/basin/realm) each get a distinct name, this string with
+                          the grouping's own name inserted before the first '.'
+                          (`_insert_name_in_ref()`) -- caught by running this against a
+                          real multi-grouping dataset, which otherwise silently pointed
+                          every grouping at whichever one's bytes got written last.
+                          `None` (the default) keeps the old embedded-JSON `frames`
+                          shape.
+
+    This is SAMPLED density, not abundance -- ADR-0035's discipline. Ship the discrete
+    `build_aggregates()` counts alongside every density payload as the honest companion
+    ("how much was collected here", not "how much was really there"); this function does
+    not compute that half.
+    """
+    from astropy_healpix import healpy as hp
+    from scipy.spatial import cKDTree
+
+    grid = grid or HealpixGrid()
+    home, plate_index, series = _prepare(records, rotations)
+    n = len(records)
+    coded = {name: _grouping_codes(g, n) for name, g in groupings.items()}
+
+    centres = np.array(grid.centres())
+    clon = np.radians(centres[:, 0])
+    clat = np.radians(centres[:, 1])
+    cxyz = np.stack([
+        np.cos(clat) * np.cos(clon),
+        np.cos(clat) * np.sin(clon),
+        np.sin(clat),
+    ], axis=1)
+    # Built ONCE: the grid never changes across times/groupings, so re-building a tree
+    # over it inside the loop below would pay its construction cost (seconds, at a
+    # million-plus-cell grid) again on every one of potentially hundreds of iterations
+    # for no reason -- only the (usually far smaller, and per-iteration-varying) point
+    # side needs a fresh tree each time.
+    cell_tree = cKDTree(cxyz)
+
+    # kappa ~= 1/sigma**2 is the standard small-angle correspondence between a von
+    # Mises-Fisher concentration and an angular standard deviation -- exact as sigma -> 0,
+    # and close enough at the tens-of-degrees bandwidths a map actually uses.
+    sigma = math.radians(bandwidth_deg)
+    kappa = 1.0 / (sigma * sigma)
+    # exp(kappa) / sinh(kappa) blows up in floating point for the kappa a tight bandwidth
+    # implies, so the normalising constant is written in the numerically stable form that
+    # cancels it: C(kappa) = kappa / (2*pi*(1 - exp(-2*kappa))), paired below with
+    # exp(kappa*(cos_theta - 1)) rather than exp(kappa*cos_theta). Each point's kernel then
+    # integrates to exactly 1 steradian over the whole sphere, so summed density reads in
+    # "points per steradian" regardless of bandwidth.
+    norm = kappa / (2.0 * math.pi * (1.0 - math.exp(-2.0 * kappa)))
+    # Truncate where the kernel is indistinguishable from zero at this bandwidth. Chord
+    # distance for an angular separation theta on a unit sphere is 2*sin(theta/2).
+    chord_radius = 2.0 * math.sin(min(4.0 * sigma, math.pi) / 2.0)
+    # Source points are pre-binned into a HEALPix grid far finer than the kernel before
+    # the pair search below -- see the loop body for why, and _bin_nside_for_bandwidth's
+    # docstring for the measurement behind cells_per_bandwidth=32.
+    bin_nside = _bin_nside_for_bandwidth(bandwidth_deg)
+
+    out_groupings = {name: {**_declared(g), "frames": {}} for name, g in groupings.items()}
+    raw = {name: {} for name in groupings}
+    series_max = {name: 0.0 for name in groupings}
+
+    for ti, time in enumerate(times):
+        live = live_mask(records, time, lifespan)
+        xyz = reconstruct(home, plate_index, series, ti)
+
+        for name, (codes, _order) in coded.items():
+            sel = live & (codes >= 0)
+            density = np.zeros(len(centres))
+            if sel.any():
+                pts = xyz[sel]
+                # Collapse selected points into HEALPix bins far finer than the kernel
+                # before the pair search, weighting each occupied bin by how many points
+                # landed in it. The search cost below tracks DISTINCT source positions,
+                # not raw record count, and real point data clusters heavily (repeated
+                # localities, rounded coordinates) -- measured 2026-09-24 against
+                # 2,002,734 real PBDB occurrences (whole-database fossils, 0-540 Ma):
+                # 96-98% collapsed into under 90K distinct bins at this resolution, for a
+                # 32-45x reduction in per-frame KDE runtime (from ~200s to ~2-5s at the
+                # scale that job runs at) at 0.4-0.9% mean relative error on cells above
+                # 0.1% of peak density -- a bin this much finer than the bandwidth loses
+                # far less than the kernel's own 4-sigma truncation already does.
+                # vec2pix/pix2vec work directly on unit vectors, no lon/lat round trip.
+                bin_pix = hp.vec2pix(bin_nside, pts[:, 0], pts[:, 1], pts[:, 2], nest=False)
+                occ, counts = np.unique(bin_pix, return_counts=True)
+                bx, by, bz = hp.pix2vec(bin_nside, occ, nest=False)
+                bin_xyz = np.stack([bx, by, bz], axis=1)
+                # No Python-level loop over either side, cells or bins: `sparse_distance_matrix`
+                # between the cell tree and the bin tree returns every (cell, bin) pair within
+                # chord_radius as flat arrays in one C-level call -- no ragged per-cell/
+                # per-bin Python loop at all -- and the kernel is then one vectorised
+                # expression over all pairs at once, scattered into `density` by
+                # `np.bincount` (a cell can appear more than once, once per nearby bin,
+                # and needs every one summed in, not just the last write -- bincount's
+                # `weights` sums duplicates, it does not overwrite them).
+                pairs = cell_tree.sparse_distance_matrix(
+                    cKDTree(bin_xyz), max_distance=chord_radius, output_type="coo_matrix")
+                if pairs.nnz:
+                    # Chord distance c = 2*sin(theta/2) on a unit sphere, so
+                    # cos(theta) = 1 - c**2/2 -- the law of cosines applied to the
+                    # isosceles triangle two unit vectors and their chord make.
+                    # Equivalent to the direct dot product bin_xyz[j] @ cxyz[i] the
+                    # earlier per-cell loop used, just read off the tree's own
+                    # distances instead of recomputing it. Each bin's contribution is
+                    # scaled by how many points it stands in for.
+                    cos_theta = 1.0 - 0.5 * pairs.data * pairs.data
+                    contrib = norm * np.exp(kappa * (cos_theta - 1.0)) * counts[pairs.col]
+                    density = np.bincount(pairs.row, weights=contrib, minlength=len(centres))
+            raw[name][_key(time)] = density
+            if density.size:
+                series_max[name] = max(series_max[name], float(density.max()))
+
+    for name in groupings:
+        # Normalised against the max over the WHOLE series, not per-frame -- a per-frame
+        # normalisation would rescale the colour ramp at every step, making an animation
+        # imply the same peak density at every time even when abundance genuinely changed.
+        ref = series_max[name] or 1.0
+        threshold = eps * ref
+        if frames_ref:
+            packed = []
+            for density in raw[name].values():
+                keep = np.flatnonzero(density >= threshold)
+                packed.append((keep, density[keep]))
+            del out_groupings[name]["frames"]
+            out_groupings[name]["frames_bin"] = _pack_frames_binary(packed)
+            # A single shared filename is only safe for a single grouping -- more than
+            # one (e.g. panama's origin/basin/realm) would otherwise all claim the SAME
+            # frames_ref while each writing DIFFERENT bytes there, so the JSON `groupings`
+            # dict would end up pointing every grouping at whichever one wrote last.
+            # Caught by actually running this against panama's real 3-grouping config,
+            # not by the single-grouping tests written before that. Distinguished by
+            # inserting the grouping's own name before the first '.' when there is more
+            # than one, so a single-grouping dataset's filename is unchanged.
+            out_groupings[name]["frames_ref"] = (
+                frames_ref if len(groupings) == 1
+                else _insert_name_in_ref(frames_ref, name)
+            )
+        else:
+            for key, density in raw[name].items():
+                keep = np.flatnonzero(density >= threshold)
+                out_groupings[name]["frames"][key] = {
+                    "cells": keep.tolist(),
+                    "density": [round(float(d), 8) for d in density[keep]],
+                }
+        out_groupings[name]["density_ref"] = ref
+
+    grid_block = _grid_meta(grid)
+    payload = {
+        "model": model_name or "unknown",
+        "grid": grid_block,
+        "times": [float(t) for t in times],
+        "default_grouping": default_grouping or next(iter(groupings)),
+        "groupings": out_groupings,
+        "lifespan": lifespan,
+        "bandwidth_deg": bandwidth_deg,
+        "density_units": "points per steradian",
+        "meta": meta or {},
+    }
+    if geometry_ref:
+        grid_block["geometry_ref"] = geometry_ref
+    else:
+        payload["cell_centres"] = grid.centres()
+        # Only present for a grid that implements it (HealpixGrid) -- optional, same
+        # duck-typed spirit as `describe()`. `null` for EqualAreaGrid: nothing here
+        # currently renders equal-area-ring cells as filled pixels, so there was
+        # nothing to justify writing an equivalent rectangle-corners method for it yet.
+        payload["cell_bounds"] = grid.bounds() if hasattr(grid, "bounds") else None
+    return payload
 
 
 def build_latitude(records, rotations, bin_ages, bins, groupings, bands=None,

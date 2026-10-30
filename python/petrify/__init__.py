@@ -13,7 +13,9 @@ or from the command line:
 
 from .aggregate import (
     EqualAreaGrid,
+    HealpixGrid,
     build_aggregates,
+    build_density,
     build_latitude,
     equal_degree_bands,
     verify_equal_area,
@@ -28,8 +30,10 @@ from .verify import verify
 
 __all__ = [
     "EqualAreaGrid",
+    "HealpixGrid",
     "boundary_length_series",
     "build_aggregates",
+    "build_density",
     "build_latitude",
     "build_frame",
     "build_points",
@@ -49,4 +53,4 @@ __all__ = [
     "verify_equal_area",
 ]
 
-__version__ = "0.13.0"
+__version__ = "0.15.0"

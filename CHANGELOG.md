@@ -4,6 +4,49 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## Unreleased
+
+Real perf/render fixes made on contact with production-scale data while
+building out Geode's density viewer (`viewer/density.html`) further —
+uncommitted here as of 2026-09-24; a version bump/tag is a separate step
+this entry does not itself do.
+
+- **`build_density()`'s inner loop was pure Python per grid cell** — fine for
+  the test suite's synthetic fixtures, a real bottleneck at production scale
+  (a fine `HealpixGrid` a 0.5° bandwidth needs has 3.1M cells). Rewritten
+  around `scipy.spatial.cKDTree.sparse_distance_matrix()` (the cell tree
+  built ONCE outside the per-frame loop, not per frame×grouping) plus
+  `np.bincount` for the scatter-sum — same math (existing tests unchanged),
+  pure vectorisation. Cut an estimated ~17h naive-fix runtime for a
+  fine-bandwidth request down to measured ~15/24/60 minutes per dataset per
+  109 frames at bandwidth 1.0°/0.5°/0.25°.
+- **`grid_geometry(grid)`** + **`build_density(..., geometry_ref=...)`**: a
+  grid's `cell_centres`/`cell_bounds` can now live in ONE shared file per
+  (kind, resolution), referenced rather than duplicated in every
+  dataset/bandwidth's own payload — measured ~304MB of a 437MB nside=512
+  density.json was exactly this, byte-identical across every caller at that
+  nside. `None` (default) keeps the old fully self-contained shape.
+- **`_pack_frames_binary()`** + **`build_density(..., frames_ref=...)`**: a
+  grouping's per-time `frames` (JSON dict of `{cells, density}` JSON arrays)
+  can now be packed into a flat binary blob instead — no JSON number-parsing
+  cost, no per-element Python `round()` loop building it. Needed because
+  extending one dataset's time range 3x (109 → 361 frames) undid the
+  `geometry_ref` win: density.json was back up to 494MB even with geometry
+  shared out, this time from frame count rather than duplication.
+  `js/aggregate.js`'s reader constructs `Uint32Array`/`Float32Array` views
+  directly over the decompressed bytes. `None` (default) keeps the old
+  embedded-JSON shape.
+- **HEALPix cells (`'dominant'` mode) drew circles/pie glyphs**, the exact
+  bug class `'density'` mode's true-pixel fix (v0.15.0, below) was supposed
+  to have generalised from but had not: `_drawCell()`'s `dominant` branch
+  now fills the true HEALPix quad (`_drawPixel`) when `cell_bounds` is
+  present, coloured by a mixture-and-occupancy blend (composition across
+  every category present, weighted by how much data backs it, with a floor
+  so a sparse cell stays visible rather than reading as empty) instead of a
+  single flat category colour.
+- See SCHEMA.md's `density.json` section for the exact `geometry_ref`/
+  `frames_ref` binary layouts.
+
 ## v0.15.1
 
 - **The `graphite` Theme's outline goes back to `'contrast'` treatment, with
