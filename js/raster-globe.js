@@ -382,6 +382,14 @@ export class RasterGlobe {
     this.cacheBuster = Date.now();
     const manifestUrl = `${url}${url.includes('?') ? '&' : '?'}v=${this.cacheBuster}`;
     const manifest = await (await fetch(manifestUrl, { cache: 'no-store' })).json();
+    // The cache is keyed by age alone, so a second series (a page switching between
+    // fields) would otherwise be served the first series' texture at every age it had
+    // already loaded. A load still in flight from the old series lands on an entry no
+    // longer in the map, where nothing reads it.
+    for (const entry of this.textures.values()) {
+      if (entry.tex) this.gl.deleteTexture(entry.tex);
+    }
+    this.textures.clear();
     this.frames = manifest.frames.slice().sort((a, b) => a.age - b.age);
     this.textureBase = url.replace(/[^/]*$/, '');
     // Pull in the two endpoints up front so there is always something to show.
@@ -401,7 +409,10 @@ export class RasterGlobe {
       img.onload = () => {
         entry.tex = this._makeTexture(img);
         resolve(entry);
-        this.render();
+        // Only a frame on screen needs a repaint. prefetchAll() lands hundreds of
+        // frames in a burst, and a full render for each one stalls the page for as
+        // long as the burst lasts -- seconds on a GPU, minutes on a software one.
+        if (this._shownAges?.includes(frame.age)) this.render();
       };
       img.onerror = () => resolve(entry);
       img.src = `${this.textureBase}${frame.file}?v=${this.cacheBuster ?? Date.now()}`;
@@ -652,6 +663,7 @@ export class RasterGlobe {
     const span = b.age - a.age;
     const mix = span > 0 ? Math.max(0, Math.min(1, (age - a.age) / span)) : 0;
 
+    this._shownAges = [a.age, b.age];
     this._loadTexture(a);
     this._loadTexture(b);
     const ta = this.textures.get(a.age)?.tex || this.blankTex;

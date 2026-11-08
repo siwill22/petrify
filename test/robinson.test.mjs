@@ -287,3 +287,28 @@ test('wrapLonDelta', () => {
   assert.equal(wrapLonDelta(-190), 170);
   assert.equal(wrapLonDelta(540), 180);
 });
+
+test('a vertex exactly on the seam is drawn on the edge the seam test puts it on', async () => {
+  // Present-day polygons cut at the dateline carry vertices at exactly +-180. The
+  // camera's projection (what RasterGlobe draws with) and Robinson.seamSplit (what
+  // decides where to lift the pen) must agree which edge those are on, or the step to
+  // the next vertex streaks across the whole map.
+  const { robinsonForward: cameraForward } = await import('../js/camera.js');
+  for (const lon of [180, -180, 540]) {
+    assert.ok(cameraForward(lon, 10)[0] > 0, `${lon} is drawn on the right edge`);
+    assert.equal(wrapLonDelta(lon), 180, `and tested as on the right edge`);
+  }
+  assert.ok(cameraForward(-179.9, 10)[0] < 0, 'its eastern neighbour is on the left');
+});
+
+test('seamSplit: a step off an on-seam vertex is cut, not drawn across', () => {
+  const p = new Robinson({ cx: 0, cy: 0, radius: 100, lon: 0 });
+  // -180 is drawn at the right edge, -179.9 at the left: a real crossing, even though
+  // one end of it lies on the seam itself.
+  const cut = p.seamSplit(lonLatToVec3(-180, 10), lonLatToVec3(-179.9, 10.1));
+  assert.ok(cut, 'the segment is cut');
+  const [leaving, arriving] = cut.map((v) => p.project(v));
+  assert.ok(leaving[0] > 0 && arriving[0] < 0, 'leaving right, arriving left');
+  // Along the seam: both ends on it, both drawn right, nothing to cut.
+  assert.equal(p.seamSplit(lonLatToVec3(180, 10), lonLatToVec3(-180, 12)), null);
+});

@@ -133,6 +133,21 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
             out["url"] = "data/boundaries.json"
             layers.append(out)
 
+        elif kind == "raster":
+            from petrify.raster import colour_stops, export_raster
+            stops = colour_stops(spec["_colours"])
+            rel = os.path.join("rasters", spec["id"])
+            export_raster(spec["_frames"], spec["_lon"], spec["_lat"],
+                          os.path.join(data_dir, rel), stops,
+                          spec["range"][0], spec["range"][1], scale=spec["scale"],
+                          width=spec["width"], nan_colour=spec["nanColour"],
+                          times=range(view.start, view.end + 1, view.step),
+                          quiet=quiet)
+            out["url"] = "data/{}/frames.json".format(rel)
+            out["colourbar"] = {"stops": stops, "min": spec["range"][0],
+                                "max": spec["range"][1], "scale": spec["scale"]}
+            layers.append(out)
+
         elif kind == "velocities":
             _copy(os.path.join(series_dir, "velocities.json"),
                   os.path.join(data_dir, "velocities.json"))
@@ -140,9 +155,12 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
             layers.append(out)
 
         elif kind == "points":
-            src = builder.points(spec)
             name = "{}.json".format(spec["id"])
-            _copy(os.path.join(src, "points.json"), os.path.join(data_dir, name))
+            if "_positions" in spec:
+                builder.supplied_points(spec, os.path.join(data_dir, name))
+            else:
+                src = builder.points(spec)
+                _copy(os.path.join(src, "points.json"), os.path.join(data_dir, name))
             out["url"] = "data/{}".format(name)
             if "_style_js_path" in spec:
                 _copy(spec["_style_js_path"],

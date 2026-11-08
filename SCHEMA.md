@@ -159,6 +159,13 @@ Keyed by stringified integer time, parallel to `points`. **`null` means no posit
 be computed** (no rotation for that plate at that time) — not "did not exist". For a model
 covering the requested range there should be none.
 
+**Supplied positions** (`supplied_trajectory()`, `View.points(positions=, key=)`) use the
+same shape for points that did not ride a plate rigidly — tracers a simulation advected
+itself. The positions are the caller's, drawn as given: no plate is assigned, nothing is
+rotated, and the records carry no `plate_id`, so the renderer enforces no plate window.
+Here **`null` does mean "not there"** — the source had no position at that time — and the
+point is not drawn then, whatever `lifespan` says. `note` says which kind a file is.
+
 ### Deciding when a point is drawn
 
 That is the renderer's job, via `PointLayer`'s `lifespan` option:
@@ -509,6 +516,30 @@ decisions in a provenance drawer.
 | `boundaries` | `boundaries.json` | `BoundarySeries`; style and decoration come from the Theme |
 | `velocities` | `velocities.json` | `VelocityField`; `scaleBar` adds a round-speed reference |
 | `points` | `points.json` | `PointLayer`; see below |
+| `raster` | `frames.json` | the globe's own texture series, under every overlay; see below |
+
+### `raster` layers
+
+```json
+{
+  "kind": "raster", "id": "raster0", "label": "Fertility", "units": null,
+  "url": "data/rasters/raster0/frames.json", "nanColour": "#1b2733",
+  "colourbar": { "stops": ["#313695", "...", "#a50026"], "min": 0.2, "max": 0.8,
+                 "scale": "linear" }
+}
+```
+
+`frames.json` is the manifest `RasterGlobe.loadTextures()` already reads —
+`{ "frames": [{ "age": 90, "file": "frames/90.png" }, ...] }` — one equirectangular RGB
+PNG per age, texel centres at `lon = -180 + (i + 0.5)·360/W`, `lat = 90 - (j + 0.5)·180/H`.
+The globe cross-fades between the two frames bracketing the current time.
+
+Colour is baked into the PNGs at export (`python/petrify/raster.py`), because the shader
+samples colours, not values; `colourbar` repeats the stops and range so the legend is
+drawn from exactly what painted the texture. Several `raster` layers make a choice in the
+legend — one series is on the globe at a time, and the first is what the page opens on.
+A recipe with a raster has no `ocean` layer: that fill is drawn over the globe and would
+hide it.
 
 ### Theme tokens
 
