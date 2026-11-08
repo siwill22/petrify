@@ -240,9 +240,14 @@ export class Robinson {
     // segment. Anything shorter is an ordinary step, however close to the edge.
     if (Math.abs(la - lb) <= 180) return null;
 
+    // The ends are drawn on opposite edges whatever happens next, so this segment is
+    // cut even when meridianCrossing finds no crossing: that is an end lying exactly
+    // on the seam (a polygon cut at the dateline), where the crossing IS that end and
+    // rounding can put it a hair outside the arc. Returning null there drew the
+    // segment straight across the map.
     const hit = meridianCrossing(a, b, seam);
-    if (!hit) return null;
-    const lat = vec3ToLonLat(hit)[1];
+    const onSeam = Math.abs(la) >= Math.abs(lb) ? a : b;
+    const lat = vec3ToLonLat(hit || onSeam)[1];
 
     // Named by which EDGE of the map each lands on, not by compass direction:
     // seam - EPS is a delta of +180-EPS from the centre, so it projects to the

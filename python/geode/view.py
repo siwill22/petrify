@@ -110,6 +110,7 @@ def _caller_name(obj, default):
 # which one theirs uses would be the first line of boilerplate back.
 LON_NAMES = ("lon", "longitude", "long", "x", "lng")
 LAT_NAMES = ("lat", "latitude", "y")
+TIME_NAMES = ("time", "time_ma", "reconstruction_time")
 
 
 def _find_column(columns, candidates, what):
@@ -286,18 +287,72 @@ class View:
                      scale_bar=_unless(scale_bar, True))
         return self
 
+    def raster(self, data, label, units=None, colours="viridis", range=None,
+               scale="linear", lon=None, lat=None, width=720, nan_colour="#1b2733"):
+        """A gridded field through time, painted on the globe under everything else.
+
+        `data` is an xarray DataArray with a `time` dimension and lon/lat
+        coordinates, or a dict of time (Ma) -> 2-D array on (`lat`, `lon`). Any
+        regular lon/lat grid will do; it is resampled onto the texture, so a grid
+        with nodes on whole degrees is not drawn half a cell off.
+
+        Colour is decided at export, because the globe samples colours rather than
+        values: `colours` is a matplotlib name or a list of hex stops, `range` the
+        (min, max) they span in data units -- the 1st to 99th percentile of every
+        frame if left out -- and `scale` 'linear' or 'log'. Call this more than
+        once and the legend offers a choice between them; one shows at a time.
+        Cells without a value are `nan_colour`.
+
+        A raster replaces the plain ocean fill: that fill is drawn over the globe,
+        so leaving it would hide the field.
+        """
+        frames, lon, lat = _raster_frames(data, lon, lat)
+        if range is None:
+            import numpy as np
+            sample = np.concatenate([np.ravel(np.asarray(v, dtype=float))
+                                     for v in frames.values()])
+            if scale == "log":
+                sample = sample[sample > 0]
+            sample = sample[np.isfinite(sample)]
+            if not sample.size:
+                raise ValueError("raster {!r} has no finite values".format(label))
+            range = (float(np.percentile(sample, 1)), float(np.percentile(sample, 99)))
+
+        self._layers = [lyr for lyr in self._layers if lyr["kind"] != "ocean"]
+        n = sum(1 for lyr in self._layers if lyr["kind"] == "raster")
+        self._layers.append({
+            "kind": "raster", "id": "raster{}".format(n), "label": label,
+            "units": units, "scale": scale,
+            "range": [float(range[0]), float(range[1])], "width": int(width),
+            "nanColour": nan_colour,
+            "_colours": colours, "_frames": frames, "_lon": lon, "_lat": lat,
+        })
+        self._record("raster", grid=_caller_name(data, "data"), label=label,
+                     units=units, colours=_unless(colours, "viridis"),
+                     range=tuple(range), scale=_unless(scale, "linear"),
+                     width=_unless(width, 720))
+        return self
+
     # -- the main verb ------------------------------------------------------
 
     def points(self, df, age=None, lon=None, lat=None, group=None, labels=None,
                colours=None, lifespan="since", highlight=None, size=3.4,
                keyline_alpha=0.55, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
-               legend_title=None, track=None, time=None, trail=False, name=None):
+               legend_title=None, track=None, time=None, trail=False, name=None,
+               positions=None, key=None):
         """Put a DataFrame of located, dated things on the globe.
 
         `age`, `lon`, `lat`, `group` and everything in `hover` are COLUMN NAMES. The
         payload keys they become are an implementation detail; nothing a caller
         writes ever refers to them.
+
+        `positions` is for things that did not ride a plate rigidly -- tracers a model
+        advected, say. It is a long table, one row per (point, time), with `key`,
+        a time column and lon/lat, and those positions are drawn exactly as given:
+        no plate is assigned and nothing is rotated. `key` is the column joining it
+        to `df`, which then needs no coordinates of its own. A point with no row at a
+        time is not drawn at that time.
 
         `hover` may be a list of columns (labels derived from the names) or a dict
         of column -> label, or column -> {label, unit, error, errorUnit} where a
@@ -326,6 +381,8 @@ class View:
 
         if age is not None:
             need(age, "age")
+        if track is not None and positions is not None:
+            raise ValueError("`track` and `positions` both supply positions; use one")
         if track is not None:
             if age is not None:
                 raise ValueError("a track's rows are dated by `time`, not `age`")
@@ -335,10 +392,25 @@ class View:
             need(time, "time")
         elif trail or time is not None:
             raise ValueError("`time` and `trail` need `track`")
-        lon = lon or _find_column(columns, LON_NAMES, "longitude")
-        lat = lat or _find_column(columns, LAT_NAMES, "latitude")
-        need(lon, "longitude")
-        need(lat, "latitude")
+        supplied = None
+        if positions is not None:
+            if key is None:
+                raise ValueError("positions= needs key=, the column joining df to it")
+            need(key, "key")
+            pcols = set(positions.columns)
+            if key not in pcols:
+                raise KeyError("positions has no key column {!r}".format(key))
+            supplied = positions.rename(columns={
+                _find_column(pcols, TIME_NAMES, "time"): "time",
+                lon or _find_column(pcols, LON_NAMES, "longitude"): "lon",
+                lat or _find_column(pcols, LAT_NAMES, "latitude"): "lat",
+            })[[key, "time", "lon", "lat"]]
+            lon = lat = None
+        else:
+            lon = lon or _find_column(columns, LON_NAMES, "longitude")
+            lat = lat or _find_column(columns, LAT_NAMES, "latitude")
+            need(lon, "longitude")
+            need(lat, "latitude")
         if group is not None:
             need(group, "group")
 
@@ -362,7 +434,8 @@ class View:
         fields = [(payload_key(c), c) for c in extra]
         # points_from_dataframe reads fixed 'Longitude'/'Latitude'/'Age' columns. The
         # rename is internal; the caller's frame is untouched.
-        prepared = df.rename(columns={lon: "Longitude", lat: "Latitude"})
+        prepared = df.rename(columns={lon: "Longitude", lat: "Latitude"}) \
+            if supplied is None else df
         if age is not None or time is not None:
             prepared = prepared.rename(columns={age or time: "Age"})
 
@@ -399,6 +472,9 @@ class View:
                       {"source": source, "doi": doi, "caption": caption}.items()
                       if v},
         }
+        if supplied is not None:
+            spec["_positions"] = supplied
+            spec["_key"] = key
         if style_js:
             spec["styleJs"] = os.path.basename(style_js)
             spec["_style_js_path"] = os.path.abspath(style_js)
@@ -414,6 +490,9 @@ class View:
 
         self._layers.append(spec)
         self._record("points", frame=name or _caller_name(df, "df"), age=age,
+                     positions=(None if supplied is None
+                                else _caller_name(positions, "positions")),
+                     key=key,
                      lon=_unless(lon, _find_column(columns, LON_NAMES, None)),
                      lat=_unless(lat, _find_column(columns, LAT_NAMES, None)),
                      group=group, labels=labels, colours=colours,
@@ -537,6 +616,32 @@ class View:
         if self.play_rate is not None:
             return self.play_rate
         return max(1.0, round((self.end - self.start) / 40.0))
+
+
+def _raster_frames(data, lon, lat):
+    """`raster()`'s two accepted inputs as ({time: 2-D array}, lon, lat).
+
+    An xarray DataArray is read by duck typing -- `dims` and `coords` -- so this
+    module does not import xarray for the callers who never use it.
+    """
+    if hasattr(data, "dims") and hasattr(data, "coords"):
+        dims = list(data.dims)
+        if "time" not in dims:
+            raise ValueError("raster DataArray needs a 'time' dimension (has {})"
+                             .format(dims))
+        names = [str(d) for d in dims if d != "time"]
+        lon_dim = _find_column(names, LON_NAMES, "longitude")
+        lat_dim = _find_column(names, LAT_NAMES, "latitude")
+        data = data.transpose("time", lat_dim, lon_dim)
+        lon = data[lon_dim].values if lon is None else lon
+        lat = data[lat_dim].values if lat is None else lat
+        frames = {float(t): data.isel(time=i).values
+                  for i, t in enumerate(data["time"].values)}
+        return frames, lon, lat
+
+    if lon is None or lat is None:
+        raise ValueError("a dict of frames needs lon= and lat=")
+    return {float(t): v for t, v in data.items()}, lon, lat
 
 
 def _hover_spec(hover, columns, age_column=None):

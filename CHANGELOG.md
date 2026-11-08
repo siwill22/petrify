@@ -6,7 +6,9 @@ decides whether to update by reading this file, not by reading the diff.
 
 ## Unreleased
 
-Tracks: things whose position at each time is known and is not carried by any plate --
+### Tracks
+
+Things whose position at each time is known and is not carried by any plate --
 a pole, a hotspot, a plume (first consumer: PlateNet's net-characteristics viewer, whose
 poles of plate-motion characteristics are fixed to the mantle frame). Until now every
 point layer assigned plates and reconstructed, which would have rotated such a pole away
@@ -31,6 +33,49 @@ fix listed last.
   sample when the last sample was `null`, because the end clamp lands there with the
   interpolation fraction at 1. A time exactly on a sample is now decided by that sample.
 - Tests: `test/tracks.test.mjs`, `python/tests/test_tracks.py`.
+
+### Raster layers and supplied positions
+
+Two ways in for a simulation rather than a compilation: gridded fields through time,
+and points a model moved itself (first consumer: the MantleMemory intraplate-volcanism
+model in siwill22/IPV, whose mantle grids, particles and seamount tracks are not
+plate rotations). Nothing changes for an existing page.
+
+- **`View.raster(data, label, ...)` and a `raster` layer kind.** `RasterGlobe` could
+  already paint one image per age; nothing let a caller holding *numbers* get there.
+  `data` is an xarray DataArray with a `time` dimension or a dict of time -> 2-D array
+  on any regular lon/lat grid. `python/petrify/raster.py` resamples it onto texel
+  centres -- a grid with nodes on whole degrees would otherwise be drawn half a cell
+  off -- colours it (matplotlib name or hex stops, linear or log) and writes RGB PNGs
+  with zlib alone, no Pillow. More than one raster makes a field picker in the legend,
+  with a colour bar drawn from the same stops. A raster drops the `ocean` fill, which
+  would otherwise be drawn over it.
+- **`View.points(..., positions=, key=)`.** A long table of (key, time, lon, lat) drawn
+  as given, as a `trajectory` payload (`petrify.supplied_trajectory`). Routing such
+  points through `points_from_dataframe` would have assigned each a plate and rotated
+  it, silently replacing the path the source computed. No gprm or pygplates on this
+  path.
+- **`RasterGlobe.loadTextures()` now drops the previous series' textures.** The cache
+  was keyed by age alone, so loading a second series served the first one's images at
+  every age already seen. Only a page that switches series could notice.
+- The View Script prints `raster(...)` and `positions=` as the caller's variable names.
+- **Fix: Robinson streaks at the present day.** `camera.js`'s `robinsonForward` sent a
+  longitude of exactly +-180 to the LEFT edge, while `Robinson.seamSplit` (via
+  `wrapLonDelta`) tested it as on the RIGHT. Polygons cut at the dateline -- every
+  Merdith2021 continent that straddles it, at 0 Ma -- have vertices exactly there, so
+  the step to the next vertex was drawn straight across the map. Both now use the
+  (-180, 180] wrap, and `seamSplit` cuts a segment whose ends are drawn on opposite
+  edges even when `meridianCrossing` finds no interior crossing (an end on the seam).
+- **`RasterGlobe` repaints only for a texture on screen.** Each texture landing used to
+  trigger a full render, so `prefetchAll()` over a 200-frame series stalled the page for
+  the whole burst. Re-picking the field already shown no longer refetches it.
+
+### Tracks and supplied positions together
+
+`points(track=, time=)` and `points(positions=, key=)` both draw positions the caller
+already has. `track` reads them from `df` itself, one row per track per time, and can draw
+a trail; `positions` joins a second table to `df` by `key` on the page's own times. Passing
+both raises, since each would replace the other's positions.
 
 ## v0.17.0
 

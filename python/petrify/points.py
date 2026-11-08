@@ -48,6 +48,13 @@ TRAJECTORY_NOTE = (
     "Whether to draw a point at a given time is the renderer's decision, from `age`."
 )
 
+SUPPLIED_NOTE = (
+    "Coordinates were supplied by the caller, one lon/lat pair per point per time, and "
+    "are drawn as given -- no plate was assigned and nothing was rotated. null means the "
+    "source had no position for that point at that time (it did not exist yet, or no "
+    "longer does), so the point is not drawn then."
+)
+
 
 def finite_rotation_to_pole_angle(rotation, decimals=6):
     """(pole_lon, pole_lat, angle_deg) for a pygplates FiniteRotation.
@@ -488,4 +495,74 @@ def build_track_trail(df, track_field, time_field, lon_field="Longitude",
         "meta": meta or {},
         "note": TRAIL_NOTE,
         "frames": {time_key(first): [lons, lats], time_key(last): [list(lons), list(lats)]},
+    }
+
+
+def supplied_trajectory(frame, positions, key, times, age_field=None, fields=(),
+                        categories=None, meta=None, model_name=None, decimals=2):
+    """A 'trajectory' payload from positions the caller already has.
+
+    For points whose motion was not a rigid plate rotation -- tracers advected through a
+    model, say, or anything a simulation moved itself. Running those back through
+    `points_from_dataframe` would assign each one a plate and rotate it, replacing the
+    path the source computed with a different one, silently. So nothing is assigned
+    here and nothing is rotated: the payload is the 'trajectory' shape the renderer
+    already reads, filled straight from the caller's table.
+
+    @param frame      one row per point, carrying `key` and the metadata columns
+    @param positions  long table, one row per (point, time): `key`, `time`, `lon`, `lat`
+    @param key        the column joining the two
+    @param times      the view's times in Ma, ascending. A position whose time is not
+                      one of these is ignored; a time with no row for a point is null.
+
+    Records carry no `plate_id`, which the renderer reads as "no plate window to
+    enforce" -- the positions themselves say when a point exists.
+    """
+    keys = list(frame[key])
+    index = {k: i for i, k in enumerate(keys)}
+    if len(index) != len(keys):
+        raise ValueError("key column {!r} is not unique".format(key))
+
+    pos = positions[positions[key].isin(index)]
+    rows = pos[key].map(index).to_numpy()
+    when = np.round(pos["time"].to_numpy(dtype=float), 6)
+    lons = np.round(pos["lon"].to_numpy(dtype=float), decimals)
+    lats = np.round(pos["lat"].to_numpy(dtype=float), decimals)
+
+    n = len(keys)
+    youngest = np.full(n, np.inf)
+    home = np.full((n, 2), np.nan)
+    frames = {}
+    for time in times:
+        sel = when == round(float(time), 6)
+        lon_t = [None] * n
+        lat_t = [None] * n
+        for i, lo, la in zip(rows[sel], lons[sel], lats[sel]):
+            lon_t[i] = float(lo)
+            lat_t[i] = float(la)
+            if time < youngest[i]:
+                youngest[i] = time
+                home[i] = (lo, la)
+        frames[str(time)] = [lon_t, lat_t]
+
+    records = []
+    for i, (_, row) in enumerate(frame.iterrows()):
+        # `lon`/`lat` is where the renderer starts from before the first setTime(); the
+        # youngest position is the closest thing this data has to "present day".
+        record = {"lon": _clean(home[i, 0]), "lat": _clean(home[i, 1]),
+                  "age": _clean(row[age_field]) if age_field else None}
+        for name, column in fields:
+            record[name] = _clean(row[column])
+        records.append(record)
+
+    return {
+        "model": model_name or "unknown",
+        "transport": "trajectory",
+        "anchor_plate_id": 0,
+        "times": list(times),
+        "categories": categories or {},
+        "points": records,
+        "meta": meta or {},
+        "note": SUPPLIED_NOTE,
+        "frames": frames,
     }

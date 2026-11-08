@@ -16,7 +16,7 @@
 import { DEG, lonLatToVec3, vec3ToLonLat } from './sphere.js';
 import {
   ROBINSON_KX, ROBINSON_KY, ROBINSON_STEP, ROBINSON_X, ROBINSON_Y,
-  robinsonForward as robinsonUnits,
+  robinsonForward as robinsonUnits, wrapLonDelta,
 } from './robinson.js';
 
 export { DEG, lonLatToVec3, vec3ToLonLat };
@@ -255,8 +255,13 @@ export const ROBINSON_YSCALE = ROBINSON_KY;
  * units (x up to +-ROBINSON_XSCALE*PI, y up to +-ROBINSON_YSCALE).
  */
 export function robinsonForward(lonDeg, latDeg, centreLonDeg = 0) {
-  let dLon = lonDeg - centreLonDeg;
-  dLon = ((dLon + 180) % 360 + 360) % 360 - 180;
+  // Into (-180, 180], the same half-open wrap as robinson.js's wrapLonDelta(). The
+  // seam test (Robinson.seamSplit) decides which edge a vertex is on with that
+  // function, so the projection drawing the vertex has to agree with it. With the
+  // other end closed, a vertex exactly on the seam -- which every polygon cut at the
+  // dateline has, at the present day -- was tested as right-edge and drawn at the
+  // left, and the step to its neighbour streaked across the whole map.
+  const dLon = wrapLonDelta(lonDeg - centreLonDeg);
   return robinsonForwardDelta(dLon, latDeg);
 }
 
@@ -265,8 +270,8 @@ export function robinsonForward(lonDeg, latDeg, centreLonDeg = 0) {
  * (already within the map's own -180..180 span relative to whatever centre it was
  * measured from) instead of an absolute longitude to be wrapped. The wrap in
  * robinsonForward() resolves the seam itself to a single canonical representative
- * (-180) -- fine for an ordinary point, wrong for geometry already split at the
- * seam that approaches it from the +180 side, which would be flipped back and
+ * (+180) -- fine for an ordinary point, wrong for geometry already split at the
+ * seam that approaches it from the -180 side, which would be flipped back and
  * reintroduce the jump the split removed.
  */
 export function robinsonForwardDelta(dLonDeg, latDeg) {

@@ -338,6 +338,15 @@ export async function mountExplorer(recipe, root) {
     }
   }
 
+  // Rasters are not overlays: they ARE the globe's own texture series, under every
+  // overlay, and only one series can be loaded at a time. Several in a recipe means
+  // the reader picks one (see buildRasterLegend); the first is what the page opens on.
+  const rasterSpecs = specs.filter((s) => s.kind === 'raster');
+  if (rasterSpecs.length) {
+    await globe.loadTextures(rasterSpecs[0].url);
+    globe.prefetchAll();
+  }
+
   const boundarySpec = specs.find((s) => s.kind === 'boundaries');
   const series = boundarySpec ? layers[boundarySpec.id ?? 'boundaries'] : null;
   const velocitySpec = specs.find((s) => s.kind === 'velocities');
@@ -408,6 +417,14 @@ export async function mountExplorer(recipe, root) {
   // see this. It used to sit after the credits, below everything else, which is
   // exactly why it went unnoticed.
   if (recipe.provenance) legendBody.append(buildProvenance(recipe.provenance, root));
+
+  if (rasterSpecs.length) {
+    legendBody.append(buildRasterLegend(rasterSpecs, async (spec) => {
+      await globe.loadTextures(spec.url);
+      globe.prefetchAll();
+      scheduleRender();
+    }));
+  }
 
   if (series && boundarySpec.legend !== false) {
     legendBody.append(buildBoundaryLegend(series, theme, scheduleRender));
@@ -635,6 +652,9 @@ async function loadLayer(spec, ctx) {
     case 'ocean':
       return null;                      // drawn inline; nothing to load
 
+    case 'raster':
+      return null;                      // the globe's own texture series, loaded by mount
+
     case 'continents':
     case 'polygons':
       return PolygonLayer.load(spec.url, {
@@ -741,6 +761,65 @@ function buildBoundaryLegend(series, theme, render) {
     list.append(li);
   }
   return list;
+}
+
+/**
+ * The field picker and its colour bar.
+ *
+ * A choice, not a set of toggles: one texture series is on the globe at a time, so the
+ * rows behave like radio buttons and there is always exactly one selected. The colour
+ * bar is drawn from the same stops the exporter painted the textures with, so the two
+ * cannot disagree -- the browser never sees the values, only their colours.
+ */
+function fmtTick(v) {
+  const n = Number(v);
+  // fmt() rounds to two decimals, which reads a seeding probability of 3e-5 as 0.
+  return n !== 0 && Math.abs(n) < 0.01 ? n.toExponential(1) : fmt(n);
+}
+
+function buildRasterLegend(specs, select) {
+  const wrap = el('div', 'dtm-legend-group');
+  const head = el('div', 'dtm-legend-grouphead');
+  head.append(el('h3', null, specs.length > 1 ? 'Field' : escapeHtml(specs[0].label)));
+  wrap.append(head);
+
+  const list = el('ul', 'dtm-legend-list');
+  const bar = el('div', 'dtm-colourbar');
+  const rows = [];
+
+  function showBar(spec) {
+    const cb = spec.colourbar;
+    const units = spec.units ? ` ${escapeHtml(spec.units)}` : '';
+    const scale = cb.scale === 'log' ? ' <span class="dtm-colourbar-note">log</span>' : '';
+    bar.innerHTML = `<div class="dtm-colourbar-ramp" style="background:`
+      + `linear-gradient(to right, ${cb.stops.join(', ')})"></div>`
+      + `<div class="dtm-colourbar-ticks"><span>${fmtTick(cb.min)}</span>`
+      + `<span>${fmtTick(cb.max)}${units}${scale}</span></div>`;
+  }
+
+  if (specs.length > 1) {
+    for (const spec of specs) {
+      const li = el('li');
+      li.innerHTML = `<span class="dtm-swatch" style="background:linear-gradient(`
+        + `to right, ${spec.colourbar.stops.join(', ')})"></span>`
+        + `<span>${escapeHtml(spec.label)}</span>`;
+      li.addEventListener('click', async () => {
+        // Re-picking the field on screen would throw away and refetch its whole series.
+        if (!li.classList.contains('is-off')) return;
+        for (const [, row] of rows) row.classList.toggle('is-off', row !== li);
+        showBar(spec);
+        await select(spec);
+      });
+      list.append(li);
+      rows.push([spec, li]);
+    }
+    rows.forEach(([, row], i) => row.classList.toggle('is-off', i !== 0));
+    wrap.append(list);
+  }
+
+  showBar(specs[0]);
+  wrap.append(bar);
+  return wrap;
 }
 
 /** One toggle row per group, each showing the symbol used on the map. */
