@@ -16,7 +16,7 @@ import pygplates
 from gprm.datasets import Reconstructions
 
 from .boundaries import build_frame
-from .points import TRANSPORTS, build_points, points_from_dataframe
+from .points import TRANSPORTS, build_points, build_track_trail, build_tracks, points_from_dataframe
 from .velocities import build_velocities, healpix_domain, velocity_payload
 
 FRAME_NAME = "boundaries_{:03d}Ma.geojson"
@@ -185,6 +185,37 @@ def export_points(gdf, model_name="Merdith2021", start=0, end=250, step=1,
             print("  {:<11s} {} ({:.1f} MB)".format(
                 mode, path, os.path.getsize(path) / 1e6))
 
+    return written
+
+
+def export_tracks(df, track_field, time_field, fields=(), categories=None, meta=None,
+                  trail=False, decimals=3, out_dir="data", model_name=None, quiet=False):
+    """Tracks whose positions are already known at each time, as points.json (one moving
+    point per track) and, with `trail`, trail.json (every position as a fixed point).
+
+    No reconstruction happens: `df` carries Longitude/Latitude in the reconstruction
+    frame, one row per (track, time). See `build_tracks` for what that is for.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    payloads = {"points.json": build_tracks(
+        df, track_field, time_field, fields=fields, categories=categories, meta=meta,
+        decimals=decimals, model_name=model_name)}
+    if trail:
+        # The trail is the same dataset drawn a second way: credit it once, on the
+        # moving points, or the page lists the caption twice.
+        trail_meta = {k: v for k, v in (meta or {}).items() if k != "caption"}
+        payloads["trail.json"] = build_track_trail(
+            df, track_field, time_field, fields=fields, categories=categories,
+            meta=trail_meta, decimals=decimals, model_name=model_name)
+
+    written = []
+    for name, payload in payloads.items():
+        path = os.path.join(out_dir, name)
+        with open(path, "w") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+        written.append(path)
+        if not quiet:
+            print("  {:<11s} {} ({} points)".format(name, path, len(payload["points"])))
     return written
 
 

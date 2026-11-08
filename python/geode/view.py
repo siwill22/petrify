@@ -292,7 +292,7 @@ class View:
                colours=None, lifespan="since", highlight=None, size=3.4,
                keyline_alpha=0.55, hover=(), label=None, footer=None,
                style_js=None, caption=None, source=None, doi=None,
-               legend_title=None, name=None):
+               legend_title=None, track=None, time=None, trail=False, name=None):
         """Put a DataFrame of located, dated things on the globe.
 
         `age`, `lon`, `lat`, `group` and everything in `hover` are COLUMN NAMES. The
@@ -307,6 +307,15 @@ class View:
         a JS module whose default export is `(point, category, api) => {fill, ...}`.
         Pages whose symbols are genuinely bespoke -- pie glyphs, say -- belong there
         rather than in a Display Rule nobody else could use.
+
+        `track` switches to things whose position at each time is already known and
+        is not carried by any plate -- a pole, a hotspot. Each row is one track at one
+        `time` (Ma), with lon/lat already in the reconstruction frame; nothing is
+        reconstructed. One symbol per track moves between its rows. `trail=True` also
+        draws each track's whole path as a line, through every row, broken wherever a
+        row has no position. Columns carried to the points (`group`, `hover`, ...) are
+        read from each track's first row for the moving symbol and from every row for
+        the trail, whose vertices also carry their time as `age`.
         """
         columns = set(df.columns)
 
@@ -317,6 +326,15 @@ class View:
 
         if age is not None:
             need(age, "age")
+        if track is not None:
+            if age is not None:
+                raise ValueError("a track's rows are dated by `time`, not `age`")
+            if time is None:
+                raise ValueError("`track` needs `time`, the column giving each row's time")
+            need(track, "track")
+            need(time, "time")
+        elif trail or time is not None:
+            raise ValueError("`time` and `trail` need `track`")
         lon = lon or _find_column(columns, LON_NAMES, "longitude")
         lat = lat or _find_column(columns, LAT_NAMES, "latitude")
         need(lon, "longitude")
@@ -330,10 +348,11 @@ class View:
         # the caller's own column name no longer exists, so the duplicate lands as
         # null and shadows the real value. Cost one silently empty Age row in every
         # popup before the browser check caught it.
-        reserved = {age, lon, lat} - {None}
-        hover_spec, hover_cols = _hover_spec(hover, columns, age_column=age)
+        reserved = {age, time, lon, lat} - {None}
+        hover_spec, hover_cols = _hover_spec(hover, columns, age_column=age or time)
         extra = []
-        for col in ([group] if group else []) + list(hover_cols) \
+        for col in ([track] if track else []) + ([group] if group else []) \
+                + list(hover_cols) \
                 + ([label] if label else []) + ([footer] if footer else []):
             if col and col not in extra:
                 need(col, "points")
@@ -344,8 +363,8 @@ class View:
         # points_from_dataframe reads fixed 'Longitude'/'Latitude'/'Age' columns. The
         # rename is internal; the caller's frame is untouched.
         prepared = df.rename(columns={lon: "Longitude", lat: "Latitude"})
-        if age is not None:
-            prepared = prepared.rename(columns={age: "Age"})
+        if age is not None or time is not None:
+            prepared = prepared.rename(columns={age or time: "Age"})
 
         categories = None
         if group is not None:
@@ -362,7 +381,9 @@ class View:
             "kind": "points",
             "id": "points{}".format(sum(1 for lyr in self._layers
                                         if lyr["kind"] == "points") or ""),
-            "lifespan": lifespan,
+            # A track's moving symbol has no age of its own; it is drawn wherever the
+            # track has a position.
+            "lifespan": "always" if track is not None else lifespan,
             "size": size,
             "keylineAlpha": keyline_alpha,
             "rule": highlight or constant(),
@@ -371,7 +392,9 @@ class View:
             "_fields": fields,
             "_categories": categories,
             "_frame": prepared,
-            "_has_age": age is not None,
+            "_has_age": age is not None or time is not None,
+            "_track": track,
+            "_trail": bool(trail),
             "_meta": {k: v for k, v in
                       {"source": source, "doi": doi, "caption": caption}.items()
                       if v},
@@ -398,7 +421,8 @@ class View:
                      highlight=highlight, size=None if size == 3.4 else size,
                      hover=hover or None, label=label, footer=footer,
                      style_js=style_js, source=source, doi=doi, caption=caption,
-                     legend_title=legend_title)
+                     legend_title=legend_title, track=track, time=time,
+                     trail=trail or None)
         return self
 
     # -- chart --------------------------------------------------------------

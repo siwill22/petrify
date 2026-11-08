@@ -342,3 +342,150 @@ def _trajectory_block(model, features, properties, times, anchor_plate, decimals
         frames[str(time)] = [lons, lats]
 
     return frames
+
+
+# ---- tracks: positions already known at each time --------------------------------------
+
+TRACK_NOTE = (
+    "Coordinates were supplied by the caller, one lon/lat pair per track per time, already "
+    "in the reconstruction frame -- nothing here was reconstructed on a plate. For things "
+    "fixed to the frame rather than to any plate: a pole, a hotspot, a plume. null means "
+    "the track has no position at that time, and the renderer draws nothing there."
+)
+
+TRAIL_NOTE = (
+    "One fixed point per track per time, in input order. `segment` names an unbroken run "
+    "of a track: it changes wherever the track has no position, so a line drawn through "
+    "each segment breaks there instead of bridging the gap."
+)
+
+
+def time_key(time):
+    """A time as the frame key the browser will look it up by.
+
+    PointLayer reads `frames[String(t)]`, and JavaScript writes a whole number without a
+    decimal point: Python's '5.0' would never be found.
+    """
+    time = float(time)
+    return str(int(time)) if time.is_integer() else repr(time)
+
+
+def _track_times(df, time_field):
+    """The distinct times, ascending, checked to be evenly spaced.
+
+    PointLayer finds the samples bracketing a time by arithmetic rather than search, so
+    an uneven series would interpolate between the wrong samples without any error.
+    """
+    times = sorted(float(t) for t in df[time_field].dropna().unique())
+    if len(times) > 2:
+        steps = np.diff(times)
+        if not np.allclose(steps, steps[0], rtol=1e-6):
+            raise ValueError("track times must be evenly spaced, got steps {}".format(
+                sorted(set(np.round(steps, 6)))))
+    return times
+
+
+def _number(time):
+    time = float(time)
+    return int(time) if time.is_integer() else time
+
+
+def _position(row, lon_field, lat_field, decimals):
+    lon, lat = row[lon_field], row[lat_field]
+    if lon is None or lat is None or _is_nan(lon) or _is_nan(lat):
+        return None, None
+    return round(float(lon), decimals), round(float(lat), decimals)
+
+
+def _is_nan(value):
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def build_tracks(df, track_field, time_field, lon_field="Longitude", lat_field="Latitude",
+                 fields=(), categories=None, meta=None, decimals=3, model_name=None):
+    """One moving point per track, as a 'trajectory' payload, from positions already known.
+
+    @param df          one row per (track, time), positions in the reconstruction frame
+    @param fields      [(payload key, column)] carried on each point, taken from the
+                       track's first row -- so they should be properties of the track
+    """
+    times = _track_times(df, time_field)
+    index = {t: k for k, t in enumerate(times)}
+    tracks = list(dict.fromkeys(df[track_field]))
+    slot = {track: i for i, track in enumerate(tracks)}
+
+    lons = [[None] * len(tracks) for _ in times]
+    lats = [[None] * len(tracks) for _ in times]
+    for _, row in df.iterrows():
+        lon, lat = _position(row, lon_field, lat_field, decimals)
+        k, i = index[float(row[time_field])], slot[row[track_field]]
+        lons[k][i], lats[k][i] = lon, lat
+
+    points = []
+    for track in tracks:
+        rows = df[df[track_field] == track]
+        first = rows.iloc[0]
+        start = next((p for p in (_position(r, lon_field, lat_field, decimals)
+                                  for _, r in rows.iterrows()) if p[0] is not None),
+                     (0.0, 0.0))
+        record = {key: _clean(first[column]) for key, column in fields}
+        record.update({"lon": start[0], "lat": start[1]})
+        points.append(record)
+
+    return {
+        "model": model_name or "unknown",
+        "transport": "trajectory",
+        "times": [_number(t) for t in times],
+        "categories": categories or {},
+        "points": points,
+        "meta": meta or {},
+        "note": TRACK_NOTE,
+        "frames": {time_key(t): [lons[k], lats[k]] for k, t in enumerate(times)},
+    }
+
+
+def build_track_trail(df, track_field, time_field, lon_field="Longitude",
+                      lat_field="Latitude", fields=(), categories=None, meta=None,
+                      decimals=3, model_name=None):
+    """Every (track, time) row as a fixed point, with `age` = its time and a `segment` key.
+
+    Drawn with `connectLive` and `connectBy: 'segment'`, this is each track's whole path.
+    Rows without a position are left out, and start a new segment.
+    """
+    points, lons, lats = [], [], []
+    for track in dict.fromkeys(df[track_field]):
+        rows = df[df[track_field] == track].sort_values(time_field)
+        run = 0
+        gap = False
+        for _, row in rows.iterrows():
+            lon, lat = _position(row, lon_field, lat_field, decimals)
+            if lon is None:
+                gap = True
+                continue
+            if gap:
+                run += 1
+                gap = False
+            record = {key: _clean(row[column]) for key, column in fields}
+            record.update({"lon": lon, "lat": lat, "age": _number(row[time_field]),
+                           "segment": "{}#{}".format(_clean(track), run)})
+            points.append(record)
+            lons.append(lon)
+            lats.append(lat)
+
+    # Fixed points need no more than two identical frames: the layer clamps any time
+    # outside them to the nearest, and slerping between equal positions is a no-op.
+    times = _track_times(df, time_field)
+    first, last = times[0], (times[-1] if len(times) > 1 else times[0] + 1)
+    return {
+        "model": model_name or "unknown",
+        "transport": "trajectory",
+        "times": [_number(first), _number(last)],
+        "categories": categories or {},
+        "points": points,
+        "meta": meta or {},
+        "note": TRAIL_NOTE,
+        "frames": {time_key(first): [lons, lats], time_key(last): [list(lons), list(lats)]},
+    }

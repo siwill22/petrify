@@ -4,6 +4,34 @@ Every entry says why, not just what — see `docs/adr/0001` for why that
 matters here: a consumer (often an agent session with no other context)
 decides whether to update by reading this file, not by reading the diff.
 
+## Unreleased
+
+Tracks: things whose position at each time is known and is not carried by any plate --
+a pole, a hotspot, a plume (first consumer: PlateNet's net-characteristics viewer, whose
+poles of plate-motion characteristics are fixed to the mantle frame). Until now every
+point layer assigned plates and reconstructed, which would have rotated such a pole away
+with whatever plate it happened to sit on. Nothing existing changes behaviour except the
+fix listed last.
+
+- **`geode` `points(df, track=..., time=..., trail=True)`**: each row is one track at one
+  time, already in the reconstruction frame. One symbol per track moves between its rows
+  along great circles; `trail=True` also draws each track's whole path, broken wherever a
+  row has no position. No plate model is loaded for these rows.
+- **`petrify.build_tracks`, `build_track_trail`, `export_tracks`**: the payloads behind
+  it, using the existing `trajectory` transport, so the browser side needs no new path.
+- **`PointLayer` `connectBy`**: one connected line per distinct value of a point property,
+  instead of one line through every live point. Several tracks share one layer without
+  being joined end to end.
+- **Composed glyphs in `PointLayer`**: a style may return `mark` (`plus`, `minus`, `dot`,
+  `x`, drawn inside the symbol) and `hollow`, and the symbols `x` and `none`. Notation
+  where the mark inside a shape carries the meaning (Conrad et al. 2013's + and - diamonds,
+  an encircled dot) needed these; a style module cannot draw outside `symbolPath`.
+- The Explorer passes `connectLive`, `connectBy` and `connectWidth` from the recipe.
+- **Fix: a trajectory point at the last time of its series** was drawn at the previous
+  sample when the last sample was `null`, because the end clamp lands there with the
+  interpolation fraction at 1. A time exactly on a sample is now decided by that sample.
+- Tests: `test/tracks.test.mjs`, `python/tests/test_tracks.py`.
+
 ## v0.17.0
 
 A projection switch for Explorer pages, and two fixes that make Robinson usable under

@@ -19,8 +19,9 @@ from .aggregate import (
     verify_equal_area,
 )
 from .boundaries import build_frame
-from .export import export_points, export_polygons, export_series, load_model
-from .points import build_points, points_from_dataframe, rotation_block
+from .export import export_points, export_polygons, export_series, export_tracks, load_model
+from .points import (build_points, build_track_trail, build_tracks, points_from_dataframe,
+                     rotation_block)
 from .polygons import build_polygons
 from .timeseries import boundary_length_series, by_boundary_type, length_series
 from .velocities import build_velocities, healpix_domain
@@ -33,6 +34,8 @@ __all__ = [
     "build_latitude",
     "build_frame",
     "build_points",
+    "build_track_trail",
+    "build_tracks",
     "build_velocities",
     "build_polygons",
     "by_boundary_type",
@@ -40,6 +43,7 @@ __all__ = [
     "export_points",
     "export_polygons",
     "export_series",
+    "export_tracks",
     "healpix_domain",
     "length_series",
     "load_model",

@@ -132,11 +132,26 @@ class Builder:
         fingerprint = _frame_fingerprint(frame, fields, spec["_has_age"])
         params = dict(self._base(), fields=[f[0] for f in fields],
                       data=fingerprint, rows=len(frame))
+        if spec.get("_track"):
+            params.update(track=spec["_track"], trail=spec["_trail"])
         key = key_for("points", params)
 
         if self.cache.hit(key):
             self.log("  points: cached ({} rows)".format(len(frame)))
             return self.cache.path(key)
+
+        if spec.get("_track"):
+            # Positions are the caller's own, already in the reconstruction frame, so
+            # there is nothing to reconstruct and the model is never loaded for them.
+            self.log("  points: {} track rows".format(len(frame)))
+            out = self.cache.begin(key)
+            _petrify().export_tracks(
+                frame, spec["_track"], "Age", fields=fields,
+                categories=spec["_categories"], meta=spec["_meta"] or None,
+                trail=spec["_trail"], out_dir=out, model_name=self.view.reconstruction,
+                quiet=self.quiet)
+            self.cache.finish(key, params)
+            return out
 
         self.log("  points: assigning plates to {} rows".format(len(frame)))
         out = self.cache.begin(key)

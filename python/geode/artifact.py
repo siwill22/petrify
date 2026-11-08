@@ -148,6 +148,17 @@ def export(view, out_dir, quiet=False, cache=None, overwrite=True):
                 _copy(spec["_style_js_path"],
                       os.path.join(data_dir, spec["styleJs"]))
                 out["styleJs"] = "data/{}".format(spec["styleJs"])
+            if spec.get("_trail"):
+                # The trail is its own points layer, drawn BEFORE the moving symbols so
+                # they sit on top of it. It shares their styling; a style module tells
+                # a trail vertex apart by its `segment` field.
+                trail = dict(out, id="{}Trail".format(spec["id"]),
+                             url="data/{}Trail.json".format(spec["id"]),
+                             lifespan="always", connectLive=True, connectBy="segment",
+                             legend=False)
+                _copy(os.path.join(src, "trail.json"),
+                      os.path.join(data_dir, "{}Trail.json".format(spec["id"])))
+                layers.append(trail)
             layers.append(out)
 
         else:

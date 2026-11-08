@@ -75,7 +75,8 @@ def _coarsen(view, frames, max_points, copier):
             continue
         spec = dict(spec)
         frame = spec["_frame"]
-        if len(frame) > max_points:
+        # A track's rows are its path; sampling them would cut holes in it.
+        if len(frame) > max_points and not spec.get("_track"):
             # Every nth row rather than the head: a compilation is usually ordered
             # by source or by region, so the first N rows are one continent.
             stride = len(frame) // max_points + 1

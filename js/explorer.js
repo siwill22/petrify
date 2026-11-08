@@ -671,6 +671,9 @@ async function loadLayer(spec, ctx) {
         keylineWidth: spec.keylineWidth ?? 0.6,
         lifespan: spec.lifespan ?? 'since',
         ageWindow: spec.ageWindow ?? 5,
+        connectLive: spec.connectLive ?? false,
+        connectBy: spec.connectBy ?? null,
+        connectWidth: spec.connectWidth ?? 1.5,
         style: (point, cat, base) => style(point, cat, { ...base, time: getTime(), inks }),
       });
     }

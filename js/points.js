@@ -42,6 +42,8 @@ export const DEFAULT_SYMBOLS = {
   triangle: 'triangle',
   'triangle-down': 'triangle-down',
   cross: 'cross',
+  x: 'x',
+  none: 'none',
 };
 
 export const DEFAULT_OPTIONS = {
@@ -137,6 +139,11 @@ export const DEFAULT_OPTIONS = {
    */
   connectLive: false,
   connectWidth: 1.5,
+
+  // With `connectBy` naming a point property, one line is drawn per distinct value
+  // instead of one through every live point: several tracks in one layer, each
+  // its own path, and a track split into runs where it has a gap.
+  connectBy: null,
 
   // Layout constants, after Leaflet.MarkerCluster but about two thirds the size, since
   // these symbols are ~3.4 px rather than 25 px map pins.
@@ -354,7 +361,10 @@ export class PointLayer {
   }
 
   _setTimeTrajectory(time) {
-    const [ia, ib, f] = this._bracket(time);
+    let [ia, ib, f] = this._bracket(time);
+    // Exactly on the later sample -- which is where the clamp at the end of the series
+    // lands -- that sample alone decides, including that a point has no position there.
+    if (f >= 1) { ia = ib; f = 0; }
     const frames = this.data.frames;
     const a = frames[String(this.times[ia])];
     const b = frames[String(this.times[ib])];
@@ -425,6 +435,12 @@ export class PointLayer {
    * map would be the wrong seam. The same hook can also return `ringRadiusDeg` (plus
    * optionally `ringColor`/`ringFill`/`connect` -- see `draw()`) to opt a point into the
    * angular-radius ring or connected-line draw modes; omitted, both are inert.
+   *
+   * Two more keys compose glyphs out of the plain symbols, for notations where the mark
+   * inside a shape carries the meaning (a + or - in a diamond, a dot in a circle):
+   * `mark` ('plus', 'minus', 'dot' or 'x') is drawn inside the symbol in `markColor`
+   * (default: the keyline colour), and `hollow: true` strokes the outline in the fill
+   * colour instead of filling it. `symbol: 'none'` draws nothing but stays pickable.
    */
   restyle() {
     const custom = this.options.style;
@@ -543,11 +559,13 @@ export class PointLayer {
       // own translucent confidence circle, not the other way round.
       if (style.ringRadiusDeg) this._drawRing(ctx, projector, i, style);
 
+      if (style.symbol === 'none') continue;
       ctx.fillStyle = style.fill;
       ctx.beginPath();
       symbolPath(ctx, style.symbol, p[0], p[1], style.size);
-      // The cross is a stroke-only mark; filling it would just make a blob.
-      if (style.symbol === 'cross') {
+      // The crosses are stroke-only marks, and so is a hollow symbol; filling either
+      // would just make a blob.
+      if (style.symbol === 'cross' || style.symbol === 'x' || style.hollow) {
         ctx.save();
         ctx.strokeStyle = style.fill;
         ctx.lineWidth = keylineWidth * 1.8;
@@ -556,6 +574,10 @@ export class PointLayer {
       } else {
         ctx.fill();
         ctx.stroke();
+      }
+      if (style.mark) {
+        drawMark(ctx, style.mark, p[0], p[1], style.size,
+          style.markColor ?? (style.hollow ? style.fill : keyline), keylineWidth * 1.6);
       }
     }
 
@@ -598,12 +620,15 @@ export class PointLayer {
     ctx.lineWidth = this.options.connectWidth;
 
     const seam = projector.seamSplit ? (a, b) => projector.seamSplit(a, b) : null;
+    const by = this.options.connectBy;
 
     let prev = -1;
     for (let i = 0; i < this.count; i++) {
       if (!this._live[i]) continue;            // not part of the sequence this frame
       const p = screen[i];
       if (!p) { prev = -1; continue; }          // behind the horizon: lift the pen
+      // A different line: start afresh rather than joining the end of the last one.
+      if (by && prev >= 0 && this.points[prev][by] !== this.points[i][by]) prev = -1;
 
       if (prev >= 0) {
         const a = screen[prev];
@@ -995,8 +1020,59 @@ function symbolPath(ctx, symbol, x, y, r) {
       ctx.lineTo(x, y + r * 1.2);
       break;
 
+    case 'x': {
+      const d = r * 0.85;
+      ctx.moveTo(x - d, y - d);
+      ctx.lineTo(x + d, y + d);
+      ctx.moveTo(x - d, y + d);
+      ctx.lineTo(x + d, y - d);
+      break;
+    }
+
     default:
       ctx.moveTo(x + r, y);
       ctx.arc(x, y, r, 0, Math.PI * 2);
   }
+}
+
+/**
+ * A mark inside a symbol of radius r: the sign in a +/- glyph, the dot or cross in a
+ * pole symbol. Sized to the symbol so the pair scales together.
+ */
+function drawMark(ctx, mark, x, y, r, colour, width) {
+  ctx.save();
+  ctx.strokeStyle = colour;
+  ctx.fillStyle = colour;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const d = r * 0.55;
+  switch (mark) {
+    case 'plus':
+      ctx.moveTo(x - d, y);
+      ctx.lineTo(x + d, y);
+      ctx.moveTo(x, y - d);
+      ctx.lineTo(x, y + d);
+      ctx.stroke();
+      break;
+    case 'minus':
+      ctx.moveTo(x - d, y);
+      ctx.lineTo(x + d, y);
+      ctx.stroke();
+      break;
+    case 'x':
+      ctx.moveTo(x - d * 0.8, y - d * 0.8);
+      ctx.lineTo(x + d * 0.8, y + d * 0.8);
+      ctx.moveTo(x - d * 0.8, y + d * 0.8);
+      ctx.lineTo(x + d * 0.8, y - d * 0.8);
+      ctx.stroke();
+      break;
+    case 'dot':
+      ctx.arc(x, y, Math.max(1, r * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    default:
+      break;
+  }
+  ctx.restore();
 }

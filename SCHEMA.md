@@ -159,6 +159,18 @@ Keyed by stringified integer time, parallel to `points`. **`null` means no posit
 be computed** (no rotation for that plate at that time) — not "did not exist". For a model
 covering the requested range there should be none.
 
+A time that falls exactly on a sample is decided by that sample alone, so a `null` at the
+last time hides the point there rather than holding it at the previous sample.
+
+**Tracks** (`petrify.build_tracks`, `geode` `points(track=...)`) use this same transport for
+things whose positions are supplied rather than reconstructed: a pole, a hotspot, anything
+fixed to the reconstruction frame instead of to a plate. One point per track; `frames`
+holds the supplied positions, `null` where the track has none; `times` is the tracks' own
+series, which need not match the page's. Fields on each point come from the track's first
+row. With a trail (`petrify.build_track_trail`), a second file holds every (track, time)
+row as a fixed point carrying its time as `age` and a `segment` key, which changes wherever
+the track has a gap, so the trail breaks there.
+
 ### Deciding when a point is drawn
 
 That is the renderer's job, via `PointLayer`'s `lifespan` option:
@@ -561,6 +573,17 @@ default export is `(point, category, api) => ({ fill, … })`. It replaces the r
 entirely. This is a supported path, not a failure: a page whose symbols are
 genuinely bespoke — pie glyphs sized by sample count, say — belongs there rather
 than in a third rule nobody else could use.
+
+A style may also return `mark` (`'plus'`, `'minus'`, `'dot'` or `'x'`, drawn inside the
+symbol), `hollow: true` (the outline stroked in the fill colour, nothing filled) and the
+symbols `'x'` and `'none'` (nothing drawn, still pickable). Together they compose
+notation glyphs — a diamond with a +, an encircled dot — out of the plain symbols.
+
+**Tracks with a trail** export as two `points` layers: `"<id>Trail"` first, with
+`"lifespan": "always", "connectLive": true, "connectBy": "segment", "legend": false`,
+then `"<id>"` with the moving symbols. `connectBy` names a point property; one line is
+drawn per distinct value. Both layers share `styleJs`; a trail vertex is the one with a
+`segment` field.
 
 ### `charts`
 
