@@ -154,6 +154,28 @@ class Builder:
         self.cache.finish(key, params)
         return out
 
+    def supplied_points(self, spec, path):
+        """Write a point layer whose positions the caller supplied -- see
+        `View.points(positions=...)`.
+
+        No plates, no rotation and no gprm, so there is nothing expensive to cache:
+        writing the payload costs less than hashing the positions table to look it up.
+        """
+        import json
+
+        frame = spec["_frame"]
+        self.log("  points: {} rows, positions supplied".format(len(frame)))
+        payload = _petrify().supplied_trajectory(
+            frame, spec["_positions"], spec["_key"],
+            times=list(range(self.view.start, self.view.end + 1, self.view.step)),
+            age_field="Age" if spec["_has_age"] else None,
+            fields=spec["_fields"], categories=spec["_categories"],
+            meta=spec["_meta"] or None, model_name=self.view.reconstruction)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+        return path
+
     # -- derived series ------------------------------------------------------
 
     def boundary_length(self):

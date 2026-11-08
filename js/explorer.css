@@ -747,3 +747,23 @@
   .dtm-projection { padding: 0 0.55rem; }
   .dtm-projection span { display: none; }
 }
+
+/* A raster's colour bar: the same stops the exporter painted the textures with. */
+.dtm-colourbar { margin: 0.35rem 0 0.2rem; }
+
+.dtm-colourbar-ramp {
+  height: 8px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px var(--dtm-rule);
+}
+
+.dtm-colourbar-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--dtm-ink-dim);
+}
+
+.dtm-colourbar-note { font-style: italic; }
